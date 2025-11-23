@@ -2,12 +2,12 @@
 #include <QProcess>
 #include <chrono>
 #include <thread>
-#include <QDebug>
 #include <mmdeviceapi.h>
 #include <Functiondiscoverykeys_devpkey.h>
 #include <comdef.h>
 #include <atlbase.h>
 #include "policyconfig.h"
+#include "logmanager.h"
 
 bool setDefaultAudioOutputDevice(const QString &deviceId)
 {
@@ -20,7 +20,7 @@ bool setDefaultAudioOutputDevice(const QString &deviceId)
     // Initialize COM library
     hr = CoInitialize(nullptr);
     if (FAILED(hr)) {
-        qDebug() << "Failed to initialize COM library";
+        LogManager::error("Failed to initialize COM library");
         return false;
     }
 
@@ -28,7 +28,7 @@ bool setDefaultAudioOutputDevice(const QString &deviceId)
     hr = CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_INPROC_SERVER,
                           IID_PPV_ARGS(&deviceEnumerator));
     if (FAILED(hr)) {
-        qDebug() << "Failed to create device enumerator";
+        LogManager::error("Failed to create device enumerator");
         CoUninitialize();
         return false;
     }
@@ -36,7 +36,7 @@ bool setDefaultAudioOutputDevice(const QString &deviceId)
     // Get the device by ID
     hr = deviceEnumerator->GetDevice(reinterpret_cast<LPCWSTR>(deviceId.utf16()), &defaultDevice);
     if (FAILED(hr)) {
-        qDebug() << "Failed to get device by ID";
+        LogManager::error("Failed to get device by ID");
         deviceEnumerator->Release();
         CoUninitialize();
         return false;
@@ -50,7 +50,7 @@ bool setDefaultAudioOutputDevice(const QString &deviceId)
         hr = CoCreateInstance(__uuidof(CPolicyConfigVistaClient), nullptr, CLSCTX_ALL,
                               IID_PPV_ARGS(&policyConfigVista));
         if (FAILED(hr)) {
-            qDebug() << "Failed to create PolicyConfig interface";
+            LogManager::error("Failed to create PolicyConfig interface");
             defaultDevice->Release();
             deviceEnumerator->Release();
             CoUninitialize();
@@ -77,11 +77,11 @@ bool setDefaultAudioOutputDevice(const QString &deviceId)
     CoUninitialize();
 
     if (FAILED(hr)) {
-        qDebug() << "Failed to set default audio output device";
+        LogManager::error("Failed to set default audio output device");
         return false;
     }
 
-    qDebug() << "Default audio output device set to:" << deviceId;
+    LogManager::info("Default audio output device set to: " + deviceId);
     return true;
 }
 
@@ -91,13 +91,13 @@ void AudioManager::setAudioDevice(QString ID)
     bool deviceFound = false;
     int maxRetries = 10;
     int retryCount = 0;
-    qDebug() << "Will try to set output to:" << ID;
+    LogManager::info("Will try to set output to: " + ID);
 
     while (retryCount < maxRetries) {
 
         if (setDefaultAudioOutputDevice(ID)) {
             deviceFound = true;
-            qDebug() << "Switched audio output to:" << ID;
+            LogManager::info("Switched audio output to: " + ID);
             break;
         }
 
@@ -105,13 +105,13 @@ void AudioManager::setAudioDevice(QString ID)
             break;
         }
 
-        qDebug() << "Device missing, retrying. Retry count:" << retryCount;
+        LogManager::debug("Device missing, retrying. Retry count: " + QString::number(retryCount));
         ++retryCount;
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
     }
 
     if (!deviceFound) {
-        qDebug() << "Unable to set audio device.";
+        LogManager::error("Unable to set audio device.");
     }
 }
 
@@ -122,7 +122,7 @@ QList<Device> AudioManager::ListAudioOutputDevices()
     // Initialize COM
     HRESULT hr = CoInitialize(nullptr);
     if (FAILED(hr)) {
-        qDebug() << "Failed to initialize COM library.";
+        LogManager::error("Failed to initialize COM library.");
         return devices; // Return an empty list if initialization fails
     }
 
@@ -131,7 +131,7 @@ QList<Device> AudioManager::ListAudioOutputDevices()
     hr = CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_INPROC_SERVER,
                           IID_PPV_ARGS(&pEnumerator));
     if (FAILED(hr)) {
-        qDebug() << "Failed to create device enumerator.";
+        LogManager::error("Failed to create device enumerator.");
         CoUninitialize();
         return devices;
     }
@@ -140,7 +140,7 @@ QList<Device> AudioManager::ListAudioOutputDevices()
     CComPtr<IMMDeviceCollection> pCollection;
     hr = pEnumerator->EnumAudioEndpoints(eRender, DEVICE_STATE_ACTIVE, &pCollection);
     if (FAILED(hr)) {
-        qDebug() << "Failed to enumerate audio output devices.";
+        LogManager::error("Failed to enumerate audio output devices.");
         CoUninitialize();
         return devices;
     }
@@ -149,7 +149,7 @@ QList<Device> AudioManager::ListAudioOutputDevices()
     UINT count;
     hr = pCollection->GetCount(&count);
     if (FAILED(hr)) {
-        qDebug() << "Failed to get audio device count.";
+        LogManager::error("Failed to get audio device count.");
         CoUninitialize();
         return devices;
     }
@@ -159,7 +159,7 @@ QList<Device> AudioManager::ListAudioOutputDevices()
         CComPtr<IMMDevice> pDevice;
         hr = pCollection->Item(i, &pDevice);
         if (FAILED(hr)) {
-            qDebug() << "Failed to get audio device at index " << i << ".";
+            LogManager::debug("Failed to get audio device at index " + QString::number(i) + ".");
             continue;
         }
 
@@ -167,7 +167,7 @@ QList<Device> AudioManager::ListAudioOutputDevices()
         DWORD dwState;
         hr = pDevice->GetState(&dwState);
         if (FAILED(hr)) {
-            qDebug() << "Failed to get device state.";
+            LogManager::debug("Failed to get device state.");
             continue;
         }
 
@@ -175,7 +175,7 @@ QList<Device> AudioManager::ListAudioOutputDevices()
         CComPtr<IPropertyStore> pProperties;
         hr = pDevice->OpenPropertyStore(STGM_READ, &pProperties);
         if (FAILED(hr)) {
-            qDebug() << "Failed to open property store.";
+            LogManager::debug("Failed to open property store.");
             continue;
         }
 

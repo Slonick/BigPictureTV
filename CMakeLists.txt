@@ -24,6 +24,7 @@ set(PROJECT_SOURCES
     src/utils.cpp
     src/displaymanager.cpp
     src/displaystatemanager.cpp
+    src/logmanager.cpp
     extern/HDRtray/common/HDR.cpp
 )
 
@@ -40,6 +41,7 @@ set(PROJECT_HEADERS
     include/utils.h
     include/displaymanager.h
     include/displaystatemanager.h
+    include/logmanager.h
     extern/HDRtray/common/HDR.h
 )
 

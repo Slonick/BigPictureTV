@@ -6,8 +6,8 @@
 #include <QStandardPaths>
 #include <QDir>
 #include <QDateTime>
-#include <QDebug>
 #include <cstring>
+#include "logmanager.h"
 
 DisplayStateManager::DisplayStateManager()
 {
@@ -87,7 +87,7 @@ bool DisplayStateManager::saveDisplayState(const std::vector<DISPLAYCONFIG_PATH_
         file.write(doc.toJson(QJsonDocument::Compact));
         file.close();
 
-        qDebug() << "Successfully saved display state to:" << filePath;
+        LogManager::info("Successfully saved display state to: " + filePath);
         return true;
 
     } catch (const std::exception &e) {
@@ -186,8 +186,8 @@ bool DisplayStateManager::loadDisplayState(std::vector<DISPLAYCONFIG_PATH_INFO> 
             modes.push_back(mode);
         }
 
-        qDebug() << "Successfully loaded display state from:" << filePath;
-        qDebug() << "Loaded paths:" << paths.size() << "modes:" << modes.size();
+        LogManager::info("Successfully loaded display state from: " + filePath);
+        LogManager::info("Loaded paths: " + QString::number(paths.size()) + " modes: " + QString::number(modes.size()));
         return true;
 
     } catch (const std::exception &e) {
@@ -215,7 +215,7 @@ bool DisplayStateManager::clearSavedState()
         return false;
     }
 
-    qDebug() << "Cleared display state file:" << filePath;
+    LogManager::info("Cleared display state file: " + filePath);
     return true;
 }
 

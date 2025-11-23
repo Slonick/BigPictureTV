@@ -1,11 +1,11 @@
 #include <QApplication>
 #include <QQmlApplicationEngine>
-#include <QDebug>
 #include <QProcess>
 #include "appconfiguration.h"
 #include "appbridge.h"
 #include "displaymanager.h"
 #include "utils.h"
+#include "logmanager.h"
 
 bool isAnotherInstanceRunning(const QString& processName)
 {
@@ -29,9 +29,12 @@ int main(int argc, char *argv[])
         app.setStyle("fusion");
     }
 
+    // Initialize LogManager for all logging (must be done before any LogManager calls)
+    LogManager::initialize();
+
     const QString processName = "BigPictureTV.exe";
     if (isAnotherInstanceRunning(processName)) {
-        qDebug() << "Another instance is already running. Exiting...";
+        LogManager::info("Another instance is already running. Exiting...");
         return 0;
     }
 

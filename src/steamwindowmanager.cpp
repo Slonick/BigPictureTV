@@ -1,6 +1,6 @@
 #include "steamwindowmanager.h"
-#include <QDebug>
 #include <windows.h>
+#include "logmanager.h"
 
 QString getRegistryValue(const std::wstring &keyPath, const std::wstring &valueName)
 {
@@ -105,11 +105,11 @@ bool SteamWindowManager::isBigPictureRunning()
                         [&windowWords](const QString &word) {
                             return windowWords.contains(word);
                         })) {
-            qDebug() << "found";
+            LogManager::debug("Big Picture window found");
             return true;
         }
     }
-    qDebug() << "not found";
+    LogManager::debug("Big Picture window not found");
     return false;
 }
 

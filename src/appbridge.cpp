@@ -10,6 +10,7 @@
 #include <QApplication>
 #include <QVariant>
 #include <QThread>
+#include "logmanager.h"
 
 AppBridge* AppBridge::s_instance = nullptr;
 
@@ -99,7 +100,7 @@ void AppBridge::onWindowActivated(QString windowTitle)
     if (isTargetWindow && !m_currentlyInGamemode) {
         // Check if Sunshine is streaming (if option enabled)
         if (config->doNotSwitchIfSunshineActive() && Utils::isSunshineStreaming()) {
-            qDebug() << "Target window activated but Sunshine is streaming - skipping gamemode activation";
+            LogManager::debug("Target window activated but Sunshine is streaming - skipping gamemode activation");
             return;
         }
 
@@ -170,7 +171,7 @@ void AppBridge::handleMonitorChanges(bool isDesktopMode)
 
             // Subscribe to audio device notifications BEFORE switching display
             audioDeviceNotifier->startListening(m_audioDeviceIdsBeforeMonitorSwitch);
-            qDebug() << "Started listening for new audio devices. Current devices:" << m_audioDeviceIdsBeforeMonitorSwitch.size();
+            LogManager::info("Started listening for new audio devices. Current devices: " + QString::number(m_audioDeviceIdsBeforeMonitorSwitch.size()));
         }
 
         // Switch to gamemode display with custom resolution
@@ -214,7 +215,7 @@ void AppBridge::handleAudioChanges(bool isDesktopMode)
 
     // When using HDMI audio for gamemode, audio switching is handled by notification callback
     if (!isDesktopMode && config->useHdmiAudioForGamemode()) {
-        qDebug() << "HDMI audio enabled - waiting for device notification...";
+        LogManager::debug("HDMI audio enabled - waiting for device notification...");
         return;
     }
 
@@ -225,14 +226,14 @@ void AppBridge::handleAudioChanges(bool isDesktopMode)
 
 void AppBridge::onNewAudioDeviceDetected(QString deviceId, QString deviceName)
 {
-    qDebug() << "NEW AUDIO DEVICE DETECTED:" << deviceName << "ID:" << deviceId;
+    LogManager::info("NEW AUDIO DEVICE DETECTED: " + deviceName + " ID: " + deviceId);
 
     // Switch to the new audio device
     AudioManager::setAudioDevice(deviceId);
 
     // Stop listening for more devices
     audioDeviceNotifier->stopListening();
-    qDebug() << "Stopped listening for audio devices after successful switch";
+    LogManager::info("Stopped listening for audio devices after successful switch");
 }
 
 void AppBridge::handleActions(bool isDesktopMode)
@@ -312,7 +313,7 @@ void AppBridge::startupReset()
 
         if (!isRunning) {
             // Target window is not running - we crashed/closed while in gamemode
-            qDebug() << "App was in gamemode but target window not running - recovering...";
+            LogManager::info("App was in gamemode but target window not running - recovering...");
 
             // Try to restore display topology from file first
             if (m_displayStateManager.hasSavedState()) {
@@ -322,7 +323,7 @@ void AppBridge::startupReset()
                     std::vector<DISPLAYCONFIG_MODE_INFO> modes;
 
                     if (m_displayStateManager.loadDisplayState(paths, modes)) {
-                        qDebug() << "Successfully loaded saved topology, attempting restore...";
+                        LogManager::info("Successfully loaded saved topology, attempting restore...");
                         displayManager->restoreTopology(paths, modes);
                     } else {
                         qWarning() << "Failed to load saved topology, using in-memory backup...";

@@ -1,6 +1,6 @@
 #include "audiodevicenotifier.h"
-#include <QDebug>
 #include <Functiondiscoverykeys_devpkey.h>
+#include "logmanager.h"
 
 AudioDeviceNotifier::AudioDeviceNotifier(QObject *parent)
     : QObject(parent)
@@ -50,7 +50,7 @@ bool AudioDeviceNotifier::startListening(const QStringList &currentDeviceIds)
     }
 
     m_isListening = true;
-    qDebug() << "Started listening for audio device changes. Current devices:" << m_deviceIdsBeforeListening.size();
+    LogManager::info("Started listening for audio device changes. Current devices: " + QString::number(m_deviceIdsBeforeListening.size()));
     return true;
 }
 
@@ -68,7 +68,7 @@ void AudioDeviceNotifier::stopListening()
     CoUninitialize();
     m_isListening = false;
     m_deviceIdsBeforeListening.clear();
-    qDebug() << "Stopped listening for audio device changes";
+    LogManager::info("Stopped listening for audio device changes");
 }
 
 // IUnknown methods
@@ -113,11 +113,11 @@ STDMETHODIMP AudioDeviceNotifier::OnDeviceAdded(LPCWSTR pwstrDeviceId)
 
     // Check if this is a NEW device (not in our snapshot)
     if (m_deviceIdsBeforeListening.contains(deviceId)) {
-        qDebug() << "Device added but was already in snapshot, ignoring:" << deviceId;
+        LogManager::debug("Device added but was already in snapshot, ignoring: " + deviceId);
         return S_OK;
     }
 
-    qDebug() << "NEW audio device detected:" << deviceId;
+    LogManager::info("NEW audio device detected: " + deviceId);
 
     // Get device friendly name
     CComPtr<IMMDevice> pDevice;
@@ -131,7 +131,7 @@ STDMETHODIMP AudioDeviceNotifier::OnDeviceAdded(LPCWSTR pwstrDeviceId)
             hr = pProperties->GetValue(PKEY_Device_FriendlyName, &varName);
             if (SUCCEEDED(hr)) {
                 QString deviceName = QString::fromWCharArray(varName.pwszVal);
-                qDebug() << "New device name:" << deviceName;
+                LogManager::info("New device name: " + deviceName);
 
                 // Emit signal to notify that a new audio device was detected
                 emit newAudioDeviceDetected(deviceId, deviceName);
@@ -161,7 +161,7 @@ STDMETHODIMP AudioDeviceNotifier::OnDeviceStateChanged(LPCWSTR pwstrDeviceId, DW
         QString deviceId = QString::fromWCharArray(pwstrDeviceId);
 
         if (!m_deviceIdsBeforeListening.contains(deviceId)) {
-            qDebug() << "Device became ACTIVE (was likely DISABLED):" << deviceId;
+            LogManager::info("Device became ACTIVE (was likely DISABLED): " + deviceId);
 
             // Get device friendly name
             CComPtr<IMMDevice> pDevice;
@@ -175,7 +175,7 @@ STDMETHODIMP AudioDeviceNotifier::OnDeviceStateChanged(LPCWSTR pwstrDeviceId, DW
                     hr = pProperties->GetValue(PKEY_Device_FriendlyName, &varName);
                     if (SUCCEEDED(hr)) {
                         QString deviceName = QString::fromWCharArray(varName.pwszVal);
-                        qDebug() << "Newly active device name:" << deviceName;
+                        LogManager::info("Newly active device name: " + deviceName);
 
                         // Emit signal for newly active device
                         emit newAudioDeviceDetected(deviceId, deviceName);

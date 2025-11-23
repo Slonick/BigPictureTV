@@ -1,10 +1,10 @@
 #include "nightlightswitcher.h"
-#include <QDebug>
 #include <iostream>
 #include <sstream>
 #include <iomanip>
 #include <vector>
 #include <Windows.h>
+#include "logmanager.h"
 
 HKEY hKey = nullptr;
 
@@ -30,7 +30,7 @@ bool NightLightSwitcher::enabled()
     BYTE data[1024];
     DWORD dataSize = sizeof(data);
     if (RegQueryValueEx(hKey, L"Data", NULL, NULL, data, &dataSize) != ERROR_SUCCESS) {
-        qDebug() << "Failed to query registry value.";
+        LogManager::error("Failed to query registry value.");
         return false;
     }
 
@@ -60,7 +60,7 @@ void NightLightSwitcher::toggle()
     BYTE data[1024];
     DWORD dataSize = sizeof(data);
     if (RegQueryValueEx(hKey, L"Data", NULL, NULL, data, &dataSize) != ERROR_SUCCESS) {
-        qDebug() << "Failed to query registry value.";
+        LogManager::error("Failed to query registry value.");
         return;
     }
 
@@ -95,6 +95,6 @@ void NightLightSwitcher::toggle()
     // Set the modified data back to the registry
     DWORD newDataSize = static_cast<DWORD>(newData.size());
     if (RegSetValueEx(hKey, L"Data", 0, REG_BINARY, newData.data(), newDataSize) != ERROR_SUCCESS) {
-        qDebug() << "Failed to update registry value.";
+        LogManager::error("Failed to update registry value.");
     }
 }

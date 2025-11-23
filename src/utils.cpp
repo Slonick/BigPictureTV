@@ -3,7 +3,6 @@
 #include <QTranslator>
 #include <QApplication>
 #include <QScreen>
-#include <QDebug>
 #include <QDir>
 #include <QFile>
 #include <QProcess>
@@ -12,6 +11,7 @@
 #include <QTextStream>
 #include <QCoreApplication>
 #include <QFileInfo>
+#include "logmanager.h"
 
 void Utils::runDisplayswitch(const QString &command)
 {
@@ -112,7 +112,7 @@ void Utils::closeDiscord()
     if (!process.waitForFinished()) {
         qWarning() << "Failed to execute taskkill command to kill Discord";
     } else {
-        qDebug() << "Taskkill command executed successfully";
+        LogManager::info("Taskkill command executed successfully");
     }
 }
 
@@ -200,7 +200,7 @@ int getBuildNumber()
         }
     }
 
-    qDebug() << "Failed to retrieve build number from the registry.";
+    LogManager::error("Failed to retrieve build number from the registry.");
     return -1;
 }
 
@@ -247,12 +247,12 @@ bool Utils::isSunshineStreaming()
         for (int port = 47998; port <= 48000; port++) {
             QString portStr = QString(":%1 ").arg(port);
             if (line.contains(portStr) && line.contains("*:*")) {
-                qDebug() << "Sunshine streaming detected on UDP port" << port;
+                LogManager::info("Sunshine streaming detected on UDP port " + QString::number(port));
                 return true;
             }
         }
     }
 
-    qDebug() << "Sunshine streaming not detected";
+    LogManager::debug("Sunshine streaming not detected");
     return false;
 }

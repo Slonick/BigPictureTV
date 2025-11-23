@@ -1,5 +1,5 @@
 #include "windoweventmonitor.h"
-#include <QDebug>
+#include "logmanager.h"
 
 WindowEventMonitor* WindowEventMonitor::s_instance = nullptr;
 
@@ -39,7 +39,7 @@ bool WindowEventMonitor::start()
         return false;
     }
 
-    qDebug() << "Windows event monitor started";
+    LogManager::info("Windows event monitor started");
     return true;
 }
 
@@ -48,7 +48,7 @@ void WindowEventMonitor::stop()
     if (m_eventHook) {
         UnhookWinEvent(m_eventHook);
         m_eventHook = nullptr;
-        qDebug() << "Windows event monitor stopped";
+        LogManager::info("Windows event monitor stopped");
     }
 }
 
@@ -102,6 +102,6 @@ void WindowEventMonitor::trackWindow(QString windowTitle)
     HWND foregroundWindow = GetForegroundWindow();
     if (foregroundWindow) {
         m_trackedWindow = foregroundWindow;
-        qDebug() << "Now tracking window:" << windowTitle;
+        LogManager::info("Now tracking window: " + windowTitle);
     }
 }

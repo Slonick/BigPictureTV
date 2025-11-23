@@ -378,7 +378,7 @@ bool DisplayManager::restoreTopology(const std::vector<DISPLAYCONFIG_PATH_INFO> 
     LONG result = SetDisplayConfig((UINT32)pathsCopy.size(), pathsCopy.data(),
                                    (UINT32)modesCopy.size(), modesCopy.data(),
                                    SDC_APPLY | SDC_USE_SUPPLIED_DISPLAY_CONFIG |
-                                       SDC_ALLOW_CHANGES);
+                                       SDC_ALLOW_CHANGES | SDC_SAVE_TO_DATABASE);
 
     if (result != ERROR_SUCCESS) {
         qWarning() << "RestoreTopology failed with error:" << result;
