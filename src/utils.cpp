@@ -256,3 +256,48 @@ bool Utils::isSunshineStreaming()
     LogManager::debug("Sunshine streaming not detected");
     return false;
 }
+
+void Utils::moveWindowToPrimaryMonitor(HWND hwnd)
+{
+    if (!hwnd || !IsWindow(hwnd)) {
+        LogManager::debug("moveWindowToPrimaryMonitor: invalid hwnd");
+        return;
+    }
+
+    HMONITOR primaryMon = MonitorFromPoint({0, 0}, MONITOR_DEFAULTTOPRIMARY);
+    MONITORINFO mi = {};
+    mi.cbSize = sizeof(mi);
+    if (!GetMonitorInfoW(primaryMon, &mi)) {
+        LogManager::warning("moveWindowToPrimaryMonitor: GetMonitorInfo failed");
+        return;
+    }
+
+    HMONITOR currentMon = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+    if (currentMon == primaryMon) {
+        LogManager::debug("moveWindowToPrimaryMonitor: window already on primary");
+        return;
+    }
+
+    WINDOWPLACEMENT wp = {};
+    wp.length = sizeof(wp);
+    GetWindowPlacement(hwnd, &wp);
+    bool wasMaximized = (wp.showCmd == SW_SHOWMAXIMIZED);
+
+    if (wasMaximized) {
+        ShowWindow(hwnd, SW_RESTORE);
+    }
+
+    int width = mi.rcMonitor.right - mi.rcMonitor.left;
+    int height = mi.rcMonitor.bottom - mi.rcMonitor.top;
+    SetWindowPos(hwnd, nullptr,
+                 mi.rcMonitor.left, mi.rcMonitor.top,
+                 width, height,
+                 SWP_NOZORDER | SWP_NOACTIVATE);
+
+    if (wasMaximized) {
+        ShowWindow(hwnd, SW_MAXIMIZE);
+    }
+
+    LogManager::info(QString("Moved window to primary monitor at (%1, %2) %3x%4")
+                     .arg(mi.rcMonitor.left).arg(mi.rcMonitor.top).arg(width).arg(height));
+}

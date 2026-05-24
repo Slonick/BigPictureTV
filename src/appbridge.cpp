@@ -115,6 +115,12 @@ void AppBridge::onWindowActivated(QString windowTitle)
             Utils::skipBigPictureIntro();
         }
         handleAudioChanges(false);
+
+        // The target window was rendered before our display switch — if the primary
+        // monitor changed, the window is still sitting on the old primary. Move it.
+        if (!config->disableMonitorSwitch()) {
+            Utils::moveWindowToPrimaryMonitor(windowMonitor->trackedWindow());
+        }
     }
     // Don't exit game mode when switching to a different window
     // Game mode should persist as long as the target window exists

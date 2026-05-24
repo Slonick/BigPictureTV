@@ -15,6 +15,8 @@ public:
     bool start();
     void stop();
 
+    HWND trackedWindow() const { return m_trackedWindow; }
+
 signals:
     void windowActivated(QString windowTitle);
     void windowDestroyed();
