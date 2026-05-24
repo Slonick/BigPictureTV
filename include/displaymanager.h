@@ -29,6 +29,13 @@ struct DisplayMode {
     UINT32 refreshRate;
 };
 
+struct DisplayTarget {
+    std::wstring device_path;
+    DisplayMode mode;
+    bool has_mode;
+    bool is_primary;
+};
+
 class DisplayManager : public QObject
 {
     Q_OBJECT
@@ -48,6 +55,7 @@ public:
 
     Q_INVOKABLE bool switchToDisplay(const QString &devicePath);
     Q_INVOKABLE bool switchToDisplayWithResolution(const QString &devicePath, quint32 width, quint32 height, quint32 refreshRate);
+    Q_INVOKABLE bool switchToDisplays(const QVariantList &displays, const QString &primaryDevicePath = QString());
     Q_INVOKABLE bool restoreOriginalConfiguration();
     Q_INVOKABLE bool saveCurrentConfiguration();
     Q_INVOKABLE void refreshDisplays();
@@ -68,6 +76,7 @@ private:
     SavedConfig saveTopology();
     bool setOnlyDisplay(const DisplayInfo &target);
     bool setOnlyDisplayWithMode(const DisplayInfo &target, const DisplayMode &mode);
+    bool setOnlyDisplaysWithModes(const std::vector<DisplayTarget> &targets);
     bool restoreTopologyFromSavedConfig(const SavedConfig &config);
 
     QVariantList m_displays;

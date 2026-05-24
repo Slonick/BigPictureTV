@@ -4,6 +4,7 @@
 #include <QObject>
 #include <QQmlEngine>
 #include <QSettings>
+#include <QVariantList>
 
 class AppConfiguration : public QObject
 {
@@ -28,10 +29,8 @@ class AppConfiguration : public QObject
 
     // Monitor settings
     Q_PROPERTY(bool disableMonitorSwitch READ disableMonitorSwitch WRITE setDisableMonitorSwitch NOTIFY disableMonitorSwitchChanged)
-    Q_PROPERTY(QString gamemodeDisplayDevice READ gamemodeDisplayDevice WRITE setGamemodeDisplayDevice NOTIFY gamemodeDisplayDeviceChanged)
-    Q_PROPERTY(quint32 gamemodeDisplayWidth READ gamemodeDisplayWidth WRITE setGamemodeDisplayWidth NOTIFY gamemodeDisplayWidthChanged)
-    Q_PROPERTY(quint32 gamemodeDisplayHeight READ gamemodeDisplayHeight WRITE setGamemodeDisplayHeight NOTIFY gamemodeDisplayHeightChanged)
-    Q_PROPERTY(quint32 gamemodeDisplayRefreshRate READ gamemodeDisplayRefreshRate WRITE setGamemodeDisplayRefreshRate NOTIFY gamemodeDisplayRefreshRateChanged)
+    Q_PROPERTY(QVariantList gamemodeDisplays READ gamemodeDisplays WRITE setGamemodeDisplays NOTIFY gamemodeDisplaysChanged)
+    Q_PROPERTY(QString gamemodePrimaryDisplay READ gamemodePrimaryDisplay WRITE setGamemodePrimaryDisplay NOTIFY gamemodePrimaryDisplayChanged)
 
     // Action settings
     Q_PROPERTY(bool closeDiscordAction READ closeDiscordAction WRITE setCloseDiscordAction NOTIFY closeDiscordActionChanged)
@@ -64,10 +63,8 @@ public:
     QString desktopAudioDeviceId() const { return m_desktopAudioDeviceId; }
 
     bool disableMonitorSwitch() const { return m_disableMonitorSwitch; }
-    QString gamemodeDisplayDevice() const { return m_gamemodeDisplayDevice; }
-    quint32 gamemodeDisplayWidth() const { return m_gamemodeDisplayWidth; }
-    quint32 gamemodeDisplayHeight() const { return m_gamemodeDisplayHeight; }
-    quint32 gamemodeDisplayRefreshRate() const { return m_gamemodeDisplayRefreshRate; }
+    QVariantList gamemodeDisplays() const { return m_gamemodeDisplays; }
+    QString gamemodePrimaryDisplay() const { return m_gamemodePrimaryDisplay; }
 
     bool closeDiscordAction() const { return m_closeDiscordAction; }
     bool performancePowerplanAction() const { return m_performancePowerplanAction; }
@@ -93,10 +90,8 @@ public:
     void setDesktopAudioDeviceId(const QString &value);
 
     void setDisableMonitorSwitch(bool value);
-    void setGamemodeDisplayDevice(const QString &value);
-    void setGamemodeDisplayWidth(quint32 value);
-    void setGamemodeDisplayHeight(quint32 value);
-    void setGamemodeDisplayRefreshRate(quint32 value);
+    void setGamemodeDisplays(const QVariantList &value);
+    void setGamemodePrimaryDisplay(const QString &value);
 
     void setCloseDiscordAction(bool value);
     void setPerformancePowerplanAction(bool value);
@@ -124,10 +119,8 @@ signals:
     void desktopAudioDeviceIdChanged();
 
     void disableMonitorSwitchChanged();
-    void gamemodeDisplayDeviceChanged();
-    void gamemodeDisplayWidthChanged();
-    void gamemodeDisplayHeightChanged();
-    void gamemodeDisplayRefreshRateChanged();
+    void gamemodeDisplaysChanged();
+    void gamemodePrimaryDisplayChanged();
 
     void closeDiscordActionChanged();
     void performancePowerplanActionChanged();
@@ -163,10 +156,8 @@ private:
     QString m_desktopAudioDeviceId;
 
     bool m_disableMonitorSwitch;
-    QString m_gamemodeDisplayDevice;
-    quint32 m_gamemodeDisplayWidth;
-    quint32 m_gamemodeDisplayHeight;
-    quint32 m_gamemodeDisplayRefreshRate;
+    QVariantList m_gamemodeDisplays;
+    QString m_gamemodePrimaryDisplay;
 
     bool m_closeDiscordAction;
     bool m_performancePowerplanAction;

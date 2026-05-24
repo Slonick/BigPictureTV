@@ -6,12 +6,56 @@ import QtQuick.Layouts
 import Odizinne.BigPictureTV
 
 Pane {
-    Component.onCompleted: {
-        if (!AppConfiguration.disableMonitorSwitch &&
-            DisplayManager.displays.length > 0 &&
-            AppConfiguration.gamemodeDisplayDevice === "") {
-            AppConfiguration.gamemodeDisplayDevice = DisplayManager.displays[0].devicePath
+    id: root
+
+    function findDisplayIndex(devicePath) {
+        const list = AppConfiguration.gamemodeDisplays
+        for (let i = 0; i < list.length; i++) {
+            if (list[i].devicePath === devicePath) {
+                return i
+            }
         }
+        return -1
+    }
+
+    function isDisplayEnabled(devicePath) {
+        return findDisplayIndex(devicePath) !== -1
+    }
+
+    function getDisplayField(devicePath, field, fallback) {
+        const idx = findDisplayIndex(devicePath)
+        if (idx === -1) return fallback
+        const value = AppConfiguration.gamemodeDisplays[idx][field]
+        return value === undefined ? fallback : value
+    }
+
+    function setDisplayEnabled(devicePath, enabled) {
+        const list = AppConfiguration.gamemodeDisplays.slice()
+        const idx = findDisplayIndex(devicePath)
+        if (enabled && idx === -1) {
+            list.push({
+                "devicePath": devicePath,
+                "width": 3840,
+                "height": 2160,
+                "refreshRate": 60
+            })
+        } else if (!enabled && idx !== -1) {
+            list.splice(idx, 1)
+        } else {
+            return
+        }
+        AppConfiguration.gamemodeDisplays = list
+    }
+
+    function updateDisplayField(devicePath, field, value) {
+        const list = AppConfiguration.gamemodeDisplays.slice()
+        const idx = findDisplayIndex(devicePath)
+        if (idx === -1) return
+        const entry = Object.assign({}, list[idx])
+        if (entry[field] === value) return
+        entry[field] = value
+        list[idx] = entry
+        AppConfiguration.gamemodeDisplays = list
     }
 
     ScrollView {
@@ -22,12 +66,11 @@ Pane {
             width: parent.width
             spacing: 3
 
-
             Label {
                 Layout.fillWidth: true
                 Layout.topMargin: 10
                 Layout.leftMargin: 3
-                text: qsTr("Gamemode Display")
+                text: qsTr("Gamemode Displays")
                 font.pixelSize: 18
                 font.bold: true
             }
@@ -36,7 +79,7 @@ Pane {
                 Layout.fillWidth: true
                 Layout.leftMargin: 3
                 Layout.bottomMargin: 5
-                text: qsTr("Select which display to use when entering gamemode")
+                text: qsTr("Select one or more displays to activate when entering gamemode. Other displays will be turned off and restored when exiting.")
                 font.pixelSize: 13
                 opacity: 0.7
                 wrapMode: Text.WordWrap
@@ -47,18 +90,9 @@ Pane {
                 Layout.preferredWidth: parent.width
                 title: "Disable monitor switching"
                 additionalControl: Switch {
-                    id: disableMonitorCheckBox
                     checked: AppConfiguration.disableMonitorSwitch
                     onToggled: {
-                        if (checked) {
-                            AppConfiguration.disableMonitorSwitch = true
-                            AppConfiguration.gamemodeDisplayDevice = ""
-                        } else {
-                            AppConfiguration.disableMonitorSwitch = false
-                            if (DisplayManager.displays.length > 0) {
-                                AppConfiguration.gamemodeDisplayDevice = DisplayManager.displays[0].devicePath
-                            }
-                        }
+                        AppConfiguration.disableMonitorSwitch = checked
                     }
                 }
             }
@@ -66,93 +100,97 @@ Pane {
             Repeater {
                 model: DisplayManager.displays
 
-                Card {
-                    id: monitorDel
+                ColumnLayout {
+                    id: monitorEntry
                     required property var model
                     Layout.fillWidth: true
-                    Layout.preferredWidth: parent.width
-                    title: model.name + (model.isActive ? qsTr(" (Currently Active)") : "")
-                    additionalControl: Switch {
-                        checked: AppConfiguration.gamemodeDisplayDevice === monitorDel.model.devicePath
-                        onToggled: {
-                            if (checked) {
-                                AppConfiguration.disableMonitorSwitch = false
-                                AppConfiguration.gamemodeDisplayDevice = monitorDel.model.devicePath
-                            } else if (AppConfiguration.gamemodeDisplayDevice === monitorDel.model.devicePath) {
-                                checked = true
+                    spacing: 3
+
+                    readonly property bool enabled: !AppConfiguration.disableMonitorSwitch &&
+                                                    root.isDisplayEnabled(monitorEntry.model.devicePath)
+
+                    Card {
+                        Layout.fillWidth: true
+                        title: monitorEntry.model.name + (monitorEntry.model.isActive ? qsTr(" (Currently Active)") : "")
+                        additionalControl: Switch {
+                            enabled: !AppConfiguration.disableMonitorSwitch
+                            checked: root.isDisplayEnabled(monitorEntry.model.devicePath)
+                            onToggled: {
+                                root.setDisplayEnabled(monitorEntry.model.devicePath, checked)
                             }
                         }
                     }
-                }
-            }
 
-            Label {
-                Layout.fillWidth: true
-                Layout.topMargin: 20
-                Layout.leftMargin: 3
-                text: qsTr("Display Resolution")
-                font.pixelSize: 18
-                font.bold: true
-            }
-
-            Label {
-                Layout.fillWidth: true
-                Layout.leftMargin: 3
-                Layout.bottomMargin: 5
-                text: qsTr("Configure the resolution and refresh rate to use in gamemode\nIt will fail if the resolution is incorrect")
-                font.pixelSize: 13
-                opacity: 0.7
-                wrapMode: Text.WordWrap
-            }
-
-            Card {
-                Layout.fillWidth: true
-                Layout.preferredWidth: parent.width
-                title: "Width"
-                additionalControl: SpinBox {
-                    id: widthSpinBox
-                    from: 640
-                    to: 7680
-                    stepSize: 1
-                    value: AppConfiguration.gamemodeDisplayWidth
-                    onValueModified: {
-                        AppConfiguration.gamemodeDisplayWidth = value
+                    Card {
+                        Layout.fillWidth: true
+                        Layout.leftMargin: 20
+                        show: monitorEntry.enabled
+                        visible: monitorEntry.enabled
+                        title: qsTr("Primary display")
+                        description: qsTr("Position this display at (0,0); others are arranged relative to it")
+                        additionalControl: RadioButton {
+                            checked: AppConfiguration.gamemodePrimaryDisplay === monitorEntry.model.devicePath
+                            onToggled: {
+                                if (checked) {
+                                    AppConfiguration.gamemodePrimaryDisplay = monitorEntry.model.devicePath
+                                }
+                            }
+                        }
                     }
-                    editable: true
-                }
-            }
 
-            Card {
-                Layout.fillWidth: true
-                Layout.preferredWidth: parent.width
-                title: "Height"
-                additionalControl: SpinBox {
-                    id: heightSpinBox
-                    from: 480
-                    to: 4320
-                    stepSize: 1
-                    value: AppConfiguration.gamemodeDisplayHeight
-                    onValueModified: {
-                        AppConfiguration.gamemodeDisplayHeight = value
+                    Card {
+                        Layout.fillWidth: true
+                        Layout.leftMargin: 20
+                        show: monitorEntry.enabled
+                        visible: monitorEntry.enabled
+                        title: qsTr("Width")
+                        additionalControl: SpinBox {
+                            from: 640
+                            to: 7680
+                            stepSize: 1
+                            editable: true
+                            value: root.getDisplayField(monitorEntry.model.devicePath, "width", 3840)
+                            onValueModified: {
+                                root.updateDisplayField(monitorEntry.model.devicePath, "width", value)
+                            }
+                        }
                     }
-                    editable: true
-                }
-            }
 
-            Card {
-                Layout.fillWidth: true
-                Layout.preferredWidth: parent.width
-                title: "Refresh Rate (Hz)"
-                additionalControl: SpinBox {
-                    id: refreshRateSpinBox
-                    from: 24
-                    to: 360
-                    stepSize: 1
-                    value: AppConfiguration.gamemodeDisplayRefreshRate
-                    onValueModified: {
-                        AppConfiguration.gamemodeDisplayRefreshRate = value
+                    Card {
+                        Layout.fillWidth: true
+                        Layout.leftMargin: 20
+                        show: monitorEntry.enabled
+                        visible: monitorEntry.enabled
+                        title: qsTr("Height")
+                        additionalControl: SpinBox {
+                            from: 480
+                            to: 4320
+                            stepSize: 1
+                            editable: true
+                            value: root.getDisplayField(monitorEntry.model.devicePath, "height", 2160)
+                            onValueModified: {
+                                root.updateDisplayField(monitorEntry.model.devicePath, "height", value)
+                            }
+                        }
                     }
-                    editable: true
+
+                    Card {
+                        Layout.fillWidth: true
+                        Layout.leftMargin: 20
+                        show: monitorEntry.enabled
+                        visible: monitorEntry.enabled
+                        title: qsTr("Refresh Rate (Hz)")
+                        additionalControl: SpinBox {
+                            from: 24
+                            to: 360
+                            stepSize: 1
+                            editable: true
+                            value: root.getDisplayField(monitorEntry.model.devicePath, "refreshRate", 60)
+                            onValueModified: {
+                                root.updateDisplayField(monitorEntry.model.devicePath, "refreshRate", value)
+                            }
+                        }
+                    }
                 }
             }
         }

@@ -174,19 +174,10 @@ void AppBridge::handleMonitorChanges(bool isDesktopMode)
             LogManager::info("Started listening for new audio devices. Current devices: " + QString::number(m_audioDeviceIdsBeforeMonitorSwitch.size()));
         }
 
-        // Switch to gamemode display with custom resolution
-        QString displayDevice = config->gamemodeDisplayDevice();
-        if (!displayDevice.isEmpty()) {
-            quint32 width = config->gamemodeDisplayWidth();
-            quint32 height = config->gamemodeDisplayHeight();
-            quint32 refreshRate = config->gamemodeDisplayRefreshRate();
-
-            if (width > 0 && height > 0 && refreshRate > 0) {
-                displayManager->switchToDisplayWithResolution(displayDevice, width, height, refreshRate);
-            } else {
-                // Fallback to default switching if resolution not set
-                displayManager->switchToDisplay(displayDevice);
-            }
+        // Switch to gamemode displays (one or more, each with its own resolution)
+        QVariantList gamemodeDisplays = config->gamemodeDisplays();
+        if (!gamemodeDisplays.isEmpty()) {
+            displayManager->switchToDisplays(gamemodeDisplays, config->gamemodePrimaryDisplay());
         }
     }
 }

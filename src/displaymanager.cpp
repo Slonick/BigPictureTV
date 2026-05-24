@@ -364,6 +364,185 @@ bool DisplayManager::switchToDisplayWithResolution(const QString &devicePath, qu
     return false;
 }
 
+bool DisplayManager::switchToDisplays(const QVariantList &displays, const QString &primaryDevicePath)
+{
+    if (displays.isEmpty()) {
+        qWarning() << "No displays specified for switching";
+        return false;
+    }
+
+    std::wstring primaryPath = primaryDevicePath.toStdWString();
+    std::vector<DisplayTarget> targets;
+    for (const QVariant &item : displays) {
+        QVariantMap map = item.toMap();
+        QString devicePath = map.value("devicePath").toString();
+        if (devicePath.isEmpty()) {
+            continue;
+        }
+
+        DisplayTarget target;
+        target.device_path = devicePath.toStdWString();
+        quint32 width = map.value("width").toUInt();
+        quint32 height = map.value("height").toUInt();
+        quint32 refreshRate = map.value("refreshRate").toUInt();
+
+        target.has_mode = (width > 0 && height > 0 && refreshRate > 0);
+        target.mode.width = width;
+        target.mode.height = height;
+        target.mode.refreshRate = refreshRate;
+        target.is_primary = !primaryPath.empty() && target.device_path == primaryPath;
+
+        targets.push_back(target);
+    }
+
+    if (targets.empty()) {
+        qWarning() << "No valid display targets after parsing";
+        return false;
+    }
+
+    bool anyPrimary = false;
+    for (const auto &t : targets) {
+        if (t.is_primary) { anyPrimary = true; break; }
+    }
+    if (!anyPrimary && !targets.empty()) {
+        targets.front().is_primary = true;
+    }
+
+    return setOnlyDisplaysWithModes(targets);
+}
+
+bool DisplayManager::setOnlyDisplaysWithModes(const std::vector<DisplayTarget> &targets)
+{
+    UINT32 pathCount = 0, modeCount = 0;
+
+    if (GetDisplayConfigBufferSizes(QDC_ALL_PATHS, &pathCount, &modeCount) != ERROR_SUCCESS) {
+        qWarning() << "Failed to get display config buffer sizes for setting displays";
+        return false;
+    }
+
+    std::vector<DISPLAYCONFIG_PATH_INFO> paths(pathCount);
+    std::vector<DISPLAYCONFIG_MODE_INFO> modes(modeCount);
+
+    if (QueryDisplayConfig(QDC_ALL_PATHS, &pathCount, paths.data(), &modeCount, modes.data(), nullptr) != ERROR_SUCCESS) {
+        qWarning() << "Failed to query display config for setting displays";
+        return false;
+    }
+
+    std::vector<DISPLAYCONFIG_PATH_INFO> newPaths;
+    std::vector<DISPLAYCONFIG_MODE_INFO> newModes;
+    std::vector<bool> targetMatched(targets.size(), false);
+    std::vector<UINT32> sourceModeIndices;
+    UINT32 primarySourceModeIdx = DISPLAYCONFIG_PATH_MODE_IDX_INVALID;
+
+    for (UINT32 i = 0; i < pathCount; i++) {
+        DISPLAYCONFIG_TARGET_DEVICE_NAME targetName = {};
+        targetName.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_TARGET_NAME;
+        targetName.header.size = sizeof(targetName);
+        targetName.header.adapterId = paths[i].targetInfo.adapterId;
+        targetName.header.id = paths[i].targetInfo.id;
+
+        if (DisplayConfigGetDeviceInfo(&targetName.header) != ERROR_SUCCESS) {
+            continue;
+        }
+
+        std::wstring devicePath = targetName.monitorDevicePath;
+
+        size_t matchedIdx = SIZE_MAX;
+        for (size_t t = 0; t < targets.size(); t++) {
+            if (!targetMatched[t] && targets[t].device_path == devicePath) {
+                matchedIdx = t;
+                break;
+            }
+        }
+
+        if (matchedIdx == SIZE_MAX) {
+            continue;
+        }
+        targetMatched[matchedIdx] = true;
+
+        const DisplayTarget &target = targets[matchedIdx];
+        auto path = paths[i];
+        path.flags = DISPLAYCONFIG_PATH_ACTIVE;
+
+        UINT32 sourceModeIdx = DISPLAYCONFIG_PATH_MODE_IDX_INVALID;
+        UINT32 targetModeIdx = DISPLAYCONFIG_PATH_MODE_IDX_INVALID;
+
+        if (path.sourceInfo.modeInfoIdx != DISPLAYCONFIG_PATH_MODE_IDX_INVALID &&
+            path.sourceInfo.modeInfoIdx < modeCount) {
+            auto sourceMode = modes[path.sourceInfo.modeInfoIdx];
+            if (target.has_mode) {
+                sourceMode.sourceMode.width = target.mode.width;
+                sourceMode.sourceMode.height = target.mode.height;
+            }
+            newModes.push_back(sourceMode);
+            sourceModeIdx = (UINT32)newModes.size() - 1;
+            sourceModeIndices.push_back(sourceModeIdx);
+            if (target.is_primary) {
+                primarySourceModeIdx = sourceModeIdx;
+            }
+        }
+
+        if (path.targetInfo.modeInfoIdx != DISPLAYCONFIG_PATH_MODE_IDX_INVALID &&
+            path.targetInfo.modeInfoIdx < modeCount) {
+            auto targetMode = modes[path.targetInfo.modeInfoIdx];
+            if (target.has_mode) {
+                targetMode.targetMode.targetVideoSignalInfo.activeSize.cx = target.mode.width;
+                targetMode.targetMode.targetVideoSignalInfo.activeSize.cy = target.mode.height;
+                targetMode.targetMode.targetVideoSignalInfo.totalSize.cx = target.mode.width;
+                targetMode.targetMode.targetVideoSignalInfo.totalSize.cy = target.mode.height;
+                targetMode.targetMode.targetVideoSignalInfo.vSyncFreq.Numerator = target.mode.refreshRate;
+                targetMode.targetMode.targetVideoSignalInfo.vSyncFreq.Denominator = 1;
+            }
+            newModes.push_back(targetMode);
+            targetModeIdx = (UINT32)newModes.size() - 1;
+        }
+
+        path.sourceInfo.modeInfoIdx = sourceModeIdx;
+        path.targetInfo.modeInfoIdx = targetModeIdx;
+
+        newPaths.push_back(path);
+    }
+
+    if (newPaths.empty()) {
+        qWarning() << "No matching display paths found for any of the requested targets";
+        return false;
+    }
+
+    for (size_t t = 0; t < targets.size(); t++) {
+        if (!targetMatched[t]) {
+            qWarning() << "Display not found:" << QString::fromStdWString(targets[t].device_path);
+        }
+    }
+
+    if (primarySourceModeIdx != DISPLAYCONFIG_PATH_MODE_IDX_INVALID &&
+        primarySourceModeIdx < newModes.size()) {
+        LONG dx = newModes[primarySourceModeIdx].sourceMode.position.x;
+        LONG dy = newModes[primarySourceModeIdx].sourceMode.position.y;
+        if (dx != 0 || dy != 0) {
+            for (UINT32 idx : sourceModeIndices) {
+                if (idx < newModes.size()) {
+                    newModes[idx].sourceMode.position.x -= dx;
+                    newModes[idx].sourceMode.position.y -= dy;
+                }
+            }
+        }
+    }
+
+    qDebug() << "Activating" << newPaths.size() << "displays";
+
+    LONG result = SetDisplayConfig((UINT32)newPaths.size(), newPaths.data(),
+                                   (UINT32)newModes.size(), newModes.data(),
+                                   SDC_APPLY | SDC_USE_SUPPLIED_DISPLAY_CONFIG |
+                                       SDC_ALLOW_CHANGES | SDC_SAVE_TO_DATABASE);
+
+    if (result != ERROR_SUCCESS) {
+        qWarning() << "SetDisplayConfig failed with error:" << result;
+        return false;
+    }
+
+    return true;
+}
+
 bool DisplayManager::restoreTopology(const std::vector<DISPLAYCONFIG_PATH_INFO> &paths,
                                     const std::vector<DISPLAYCONFIG_MODE_INFO> &modes)
 {
