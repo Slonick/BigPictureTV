@@ -1,6 +1,8 @@
 #include "displaymanager.h"
 #include <QDebug>
 #include <map>
+#include <set>
+#include <tuple>
 
 DisplayManager* DisplayManager::s_instance = nullptr;
 
@@ -575,6 +577,146 @@ bool DisplayManager::restoreTopologyFromSavedConfig(const SavedConfig &config)
     }
 
     return restoreTopology(config.paths, config.modes);
+}
+
+QVariantList DisplayManager::getSupportedModes(const QString &devicePath)
+{
+    QVariantList result;
+    std::wstring targetPath = devicePath.toStdWString();
+
+    UINT32 pathCount = 0, modeCount = 0;
+    if (GetDisplayConfigBufferSizes(QDC_ALL_PATHS, &pathCount, &modeCount) != ERROR_SUCCESS) {
+        qWarning() << "Failed to get display config buffer sizes for supported modes";
+        return result;
+    }
+
+    std::vector<DISPLAYCONFIG_PATH_INFO> paths(pathCount);
+    std::vector<DISPLAYCONFIG_MODE_INFO> modes(modeCount);
+
+    if (QueryDisplayConfig(QDC_ALL_PATHS, &pathCount, paths.data(),
+                           &modeCount, modes.data(), nullptr) != ERROR_SUCCESS) {
+        qWarning() << "Failed to query display config for supported modes";
+        return result;
+    }
+
+    std::wstring gdiName;
+    for (UINT32 i = 0; i < pathCount; i++) {
+        DISPLAYCONFIG_TARGET_DEVICE_NAME targetName = {};
+        targetName.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_TARGET_NAME;
+        targetName.header.size = sizeof(targetName);
+        targetName.header.adapterId = paths[i].targetInfo.adapterId;
+        targetName.header.id = paths[i].targetInfo.id;
+
+        if (DisplayConfigGetDeviceInfo(&targetName.header) != ERROR_SUCCESS) {
+            continue;
+        }
+
+        if (std::wstring(targetName.monitorDevicePath) != targetPath) {
+            continue;
+        }
+
+        DISPLAYCONFIG_SOURCE_DEVICE_NAME sourceName = {};
+        sourceName.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME;
+        sourceName.header.size = sizeof(sourceName);
+        sourceName.header.adapterId = paths[i].sourceInfo.adapterId;
+        sourceName.header.id = paths[i].sourceInfo.id;
+
+        if (DisplayConfigGetDeviceInfo(&sourceName.header) == ERROR_SUCCESS) {
+            gdiName = sourceName.viewGdiDeviceName;
+            break;
+        }
+    }
+
+    if (gdiName.empty()) {
+        qWarning() << "Could not find GDI device name for" << devicePath;
+        return result;
+    }
+
+    std::set<std::tuple<DWORD, DWORD, DWORD>> seen;
+
+    DEVMODEW devMode = {};
+    devMode.dmSize = sizeof(devMode);
+    for (DWORD i = 0; EnumDisplaySettingsExW(gdiName.c_str(), i, &devMode, 0); i++) {
+        if (devMode.dmBitsPerPel != 32) continue;
+        if (devMode.dmDisplayFlags & DM_INTERLACED) continue;
+        if (devMode.dmDisplayFrequency < 24) continue;
+
+        auto key = std::make_tuple(devMode.dmPelsWidth, devMode.dmPelsHeight, devMode.dmDisplayFrequency);
+        if (!seen.insert(key).second) continue;
+
+        QVariantMap entry;
+        entry["width"] = (quint32)devMode.dmPelsWidth;
+        entry["height"] = (quint32)devMode.dmPelsHeight;
+        entry["refreshRate"] = (quint32)devMode.dmDisplayFrequency;
+        result.append(entry);
+    }
+
+    return result;
+}
+
+QVariantMap DisplayManager::getCurrentOrNativeMode(const QString &devicePath)
+{
+    QVariantMap result;
+    std::wstring targetPath = devicePath.toStdWString();
+
+    // First, try to find the current mode from active paths
+    UINT32 pathCount = 0, modeCount = 0;
+    if (GetDisplayConfigBufferSizes(QDC_ONLY_ACTIVE_PATHS, &pathCount, &modeCount) == ERROR_SUCCESS) {
+        std::vector<DISPLAYCONFIG_PATH_INFO> paths(pathCount);
+        std::vector<DISPLAYCONFIG_MODE_INFO> modes(modeCount);
+
+        if (QueryDisplayConfig(QDC_ONLY_ACTIVE_PATHS, &pathCount, paths.data(),
+                               &modeCount, modes.data(), nullptr) == ERROR_SUCCESS) {
+            for (UINT32 i = 0; i < pathCount; i++) {
+                DISPLAYCONFIG_TARGET_DEVICE_NAME targetName = {};
+                targetName.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_TARGET_NAME;
+                targetName.header.size = sizeof(targetName);
+                targetName.header.adapterId = paths[i].targetInfo.adapterId;
+                targetName.header.id = paths[i].targetInfo.id;
+
+                if (DisplayConfigGetDeviceInfo(&targetName.header) != ERROR_SUCCESS) continue;
+                if (std::wstring(targetName.monitorDevicePath) != targetPath) continue;
+
+                quint32 width = 0, height = 0, refreshRate = 0;
+                if (paths[i].sourceInfo.modeInfoIdx != DISPLAYCONFIG_PATH_MODE_IDX_INVALID &&
+                    paths[i].sourceInfo.modeInfoIdx < modeCount) {
+                    width = modes[paths[i].sourceInfo.modeInfoIdx].sourceMode.width;
+                    height = modes[paths[i].sourceInfo.modeInfoIdx].sourceMode.height;
+                }
+                if (paths[i].targetInfo.modeInfoIdx != DISPLAYCONFIG_PATH_MODE_IDX_INVALID &&
+                    paths[i].targetInfo.modeInfoIdx < modeCount) {
+                    const auto &freq = modes[paths[i].targetInfo.modeInfoIdx].targetMode.targetVideoSignalInfo.vSyncFreq;
+                    if (freq.Denominator > 0) {
+                        refreshRate = (quint32)((freq.Numerator + freq.Denominator / 2) / freq.Denominator);
+                    }
+                }
+
+                if (width > 0 && height > 0 && refreshRate > 0) {
+                    result["width"] = width;
+                    result["height"] = height;
+                    result["refreshRate"] = refreshRate;
+                    return result;
+                }
+            }
+        }
+    }
+
+    // Fallback: display is inactive — pick the highest supported mode
+    QVariantList supported = getSupportedModes(devicePath);
+    QVariantMap best;
+    quint64 bestScore = 0;
+    for (const QVariant &item : supported) {
+        QVariantMap m = item.toMap();
+        quint32 w = m.value("width").toUInt();
+        quint32 h = m.value("height").toUInt();
+        quint32 r = m.value("refreshRate").toUInt();
+        quint64 score = (quint64)w * h * 1000ULL + r;
+        if (score > bestScore) {
+            bestScore = score;
+            best = m;
+        }
+    }
+    return best;
 }
 
 bool DisplayManager::restoreOriginalConfiguration()

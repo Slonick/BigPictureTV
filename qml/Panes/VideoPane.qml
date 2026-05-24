@@ -33,11 +33,12 @@ Pane {
         const list = AppConfiguration.gamemodeDisplays.slice()
         const idx = findDisplayIndex(devicePath)
         if (enabled && idx === -1) {
+            const defaults = DisplayManager.getCurrentOrNativeMode(devicePath)
             list.push({
                 "devicePath": devicePath,
-                "width": 3840,
-                "height": 2160,
-                "refreshRate": 60
+                "width": defaults.width || 1920,
+                "height": defaults.height || 1080,
+                "refreshRate": defaults.refreshRate || 60
             })
         } else if (!enabled && idx !== -1) {
             list.splice(idx, 1)
@@ -47,15 +48,45 @@ Pane {
         AppConfiguration.gamemodeDisplays = list
     }
 
-    function updateDisplayField(devicePath, field, value) {
+    function updateDisplayMode(devicePath, width, height, refreshRate) {
         const list = AppConfiguration.gamemodeDisplays.slice()
         const idx = findDisplayIndex(devicePath)
         if (idx === -1) return
         const entry = Object.assign({}, list[idx])
-        if (entry[field] === value) return
-        entry[field] = value
+        if (entry.width === width && entry.height === height && entry.refreshRate === refreshRate) return
+        entry.width = width
+        entry.height = height
+        entry.refreshRate = refreshRate
         list[idx] = entry
         AppConfiguration.gamemodeDisplays = list
+    }
+
+    function uniqueResolutions(modes) {
+        const seen = {}
+        const list = []
+        for (let i = 0; i < modes.length; i++) {
+            const key = modes[i].width + "x" + modes[i].height
+            if (!seen[key]) {
+                seen[key] = true
+                list.push({ width: modes[i].width, height: modes[i].height, label: modes[i].width + " × " + modes[i].height })
+            }
+        }
+        list.sort(function(a, b) {
+            return (b.width * b.height) - (a.width * a.height)
+        })
+        return list
+    }
+
+    function refreshRatesFor(modes, width, height) {
+        const rates = {}
+        for (let i = 0; i < modes.length; i++) {
+            if (modes[i].width === width && modes[i].height === height) {
+                rates[modes[i].refreshRate] = true
+            }
+        }
+        const list = Object.keys(rates).map(function(r) { return parseInt(r) })
+        list.sort(function(a, b) { return b - a })
+        return list
     }
 
     ScrollView {
@@ -106,8 +137,29 @@ Pane {
                     Layout.fillWidth: true
                     spacing: 3
 
-                    readonly property bool enabled: !AppConfiguration.disableMonitorSwitch &&
-                                                    root.isDisplayEnabled(monitorEntry.model.devicePath)
+                    readonly property bool entryEnabled: !AppConfiguration.disableMonitorSwitch &&
+                                                        root.isDisplayEnabled(monitorEntry.model.devicePath)
+
+                    property var supportedModes: []
+                    property var resolutions: []
+                    property var refreshRates: []
+
+                    function reloadModes() {
+                        supportedModes = DisplayManager.getSupportedModes(monitorEntry.model.devicePath)
+                        resolutions = root.uniqueResolutions(supportedModes)
+                        const w = root.getDisplayField(monitorEntry.model.devicePath, "width", 0)
+                        const h = root.getDisplayField(monitorEntry.model.devicePath, "height", 0)
+                        refreshRates = root.refreshRatesFor(supportedModes, w, h)
+                    }
+
+                    Component.onCompleted: reloadModes()
+
+                    Connections {
+                        target: AppConfiguration
+                        function onGamemodeDisplaysChanged() {
+                            monitorEntry.reloadModes()
+                        }
+                    }
 
                     Card {
                         Layout.fillWidth: true
@@ -124,8 +176,8 @@ Pane {
                     Card {
                         Layout.fillWidth: true
                         Layout.leftMargin: 20
-                        show: monitorEntry.enabled
-                        visible: monitorEntry.enabled
+                        show: monitorEntry.entryEnabled
+                        visible: monitorEntry.entryEnabled
                         title: qsTr("Primary display")
                         description: qsTr("Position this display at (0,0); others are arranged relative to it")
                         additionalControl: RadioButton {
@@ -141,53 +193,82 @@ Pane {
                     Card {
                         Layout.fillWidth: true
                         Layout.leftMargin: 20
-                        show: monitorEntry.enabled
-                        visible: monitorEntry.enabled
-                        title: qsTr("Width")
-                        additionalControl: SpinBox {
-                            from: 640
-                            to: 7680
-                            stepSize: 1
-                            editable: true
-                            value: root.getDisplayField(monitorEntry.model.devicePath, "width", 3840)
-                            onValueModified: {
-                                root.updateDisplayField(monitorEntry.model.devicePath, "width", value)
-                            }
-                        }
-                    }
+                        show: monitorEntry.entryEnabled
+                        visible: monitorEntry.entryEnabled
+                        title: qsTr("Resolution & refresh rate")
+                        additionalControl: RowLayout {
+                            spacing: 8
 
-                    Card {
-                        Layout.fillWidth: true
-                        Layout.leftMargin: 20
-                        show: monitorEntry.enabled
-                        visible: monitorEntry.enabled
-                        title: qsTr("Height")
-                        additionalControl: SpinBox {
-                            from: 480
-                            to: 4320
-                            stepSize: 1
-                            editable: true
-                            value: root.getDisplayField(monitorEntry.model.devicePath, "height", 2160)
-                            onValueModified: {
-                                root.updateDisplayField(monitorEntry.model.devicePath, "height", value)
-                            }
-                        }
-                    }
+                            ComboBox {
+                                id: resolutionCombo
+                                Layout.preferredWidth: 140
+                                textRole: "label"
+                                valueRole: "label"
+                                model: monitorEntry.resolutions
 
-                    Card {
-                        Layout.fillWidth: true
-                        Layout.leftMargin: 20
-                        show: monitorEntry.enabled
-                        visible: monitorEntry.enabled
-                        title: qsTr("Refresh Rate (Hz)")
-                        additionalControl: SpinBox {
-                            from: 24
-                            to: 360
-                            stepSize: 1
-                            editable: true
-                            value: root.getDisplayField(monitorEntry.model.devicePath, "refreshRate", 60)
-                            onValueModified: {
-                                root.updateDisplayField(monitorEntry.model.devicePath, "refreshRate", value)
+                                property bool internalUpdate: false
+
+                                function syncFromConfig() {
+                                    internalUpdate = true
+                                    const w = root.getDisplayField(monitorEntry.model.devicePath, "width", 0)
+                                    const h = root.getDisplayField(monitorEntry.model.devicePath, "height", 0)
+                                    let idx = -1
+                                    for (let i = 0; i < monitorEntry.resolutions.length; i++) {
+                                        if (monitorEntry.resolutions[i].width === w &&
+                                            monitorEntry.resolutions[i].height === h) {
+                                            idx = i
+                                            break
+                                        }
+                                    }
+                                    currentIndex = idx
+                                    internalUpdate = false
+                                }
+
+                                onModelChanged: syncFromConfig()
+                                Component.onCompleted: syncFromConfig()
+
+                                onActivated: {
+                                    if (internalUpdate || currentIndex < 0) return
+                                    const res = monitorEntry.resolutions[currentIndex]
+                                    const rates = root.refreshRatesFor(monitorEntry.supportedModes, res.width, res.height)
+                                    const currentRate = root.getDisplayField(monitorEntry.model.devicePath, "refreshRate", 60)
+                                    const newRate = rates.indexOf(currentRate) !== -1 ? currentRate : (rates[0] || 60)
+                                    root.updateDisplayMode(monitorEntry.model.devicePath, res.width, res.height, newRate)
+                                }
+                            }
+
+                            ComboBox {
+                                id: refreshCombo
+                                Layout.preferredWidth: 100
+                                model: monitorEntry.refreshRates
+                                displayText: currentIndex >= 0 ? (monitorEntry.refreshRates[currentIndex] + " Hz") : ""
+
+                                delegate: ItemDelegate {
+                                    required property int index
+                                    required property var modelData
+                                    width: refreshCombo.width
+                                    text: modelData + " Hz"
+                                    highlighted: refreshCombo.highlightedIndex === index
+                                }
+
+                                property bool internalUpdate: false
+
+                                function syncFromConfig() {
+                                    internalUpdate = true
+                                    const r = root.getDisplayField(monitorEntry.model.devicePath, "refreshRate", 0)
+                                    currentIndex = monitorEntry.refreshRates.indexOf(r)
+                                    internalUpdate = false
+                                }
+
+                                onModelChanged: syncFromConfig()
+                                Component.onCompleted: syncFromConfig()
+
+                                onActivated: {
+                                    if (internalUpdate || currentIndex < 0) return
+                                    const w = root.getDisplayField(monitorEntry.model.devicePath, "width", 0)
+                                    const h = root.getDisplayField(monitorEntry.model.devicePath, "height", 0)
+                                    root.updateDisplayMode(monitorEntry.model.devicePath, w, h, monitorEntry.refreshRates[currentIndex])
+                                }
                             }
                         }
                     }

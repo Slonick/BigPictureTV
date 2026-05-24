@@ -59,6 +59,8 @@ public:
     Q_INVOKABLE bool restoreOriginalConfiguration();
     Q_INVOKABLE bool saveCurrentConfiguration();
     Q_INVOKABLE void refreshDisplays();
+    Q_INVOKABLE QVariantList getSupportedModes(const QString &devicePath);
+    Q_INVOKABLE QVariantMap getCurrentOrNativeMode(const QString &devicePath);
 
     // Public methods for saved topology access
     const std::vector<DISPLAYCONFIG_PATH_INFO>& getSavedPaths() const { return m_savedConfig.paths; }
