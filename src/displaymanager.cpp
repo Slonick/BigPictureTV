@@ -6,6 +6,8 @@
 #include <set>
 #include <tuple>
 
+static std::wstring findGdiNameForMonitor(const std::wstring &targetMonitorPath);
+
 DisplayManager* DisplayManager::s_instance = nullptr;
 
 DisplayManager* DisplayManager::create(QQmlEngine *qmlEngine, QJSEngine *jsEngine)
