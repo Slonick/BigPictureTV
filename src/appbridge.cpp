@@ -143,16 +143,23 @@ void AppBridge::handleMonitorChanges(bool isDesktopMode)
 {
     AppConfiguration* config = AppConfiguration::instance();
 
+    LogManager::info(QString("handleMonitorChanges: isDesktopMode=%1 disableMonitorSwitch=%2")
+                     .arg(isDesktopMode ? "true" : "false")
+                     .arg(config->disableMonitorSwitch() ? "true" : "false"));
+
     if (config->disableMonitorSwitch())
         return;
 
     DisplayManager* displayManager = DisplayManager::instance();
-    if (!displayManager)
+    if (!displayManager) {
+        LogManager::error("handleMonitorChanges: DisplayManager instance is null");
         return;
+    }
 
     if (isDesktopMode) {
-        // Restore original configuration
-        displayManager->restoreOriginalConfiguration();
+        LogManager::info("Restoring original display configuration");
+        bool ok = displayManager->restoreOriginalConfiguration();
+        LogManager::info(QString("Restore result: %1").arg(ok ? "success" : "failed"));
         // Clear the persistent state file after successful restore
         m_displayStateManager.clearSavedState();
     } else {
@@ -176,8 +183,14 @@ void AppBridge::handleMonitorChanges(bool isDesktopMode)
 
         // Switch to gamemode displays (one or more, each with its own resolution)
         QVariantList gamemodeDisplays = config->gamemodeDisplays();
+        LogManager::info(QString("Gamemode displays configured: %1, primary=%2")
+                         .arg(gamemodeDisplays.size())
+                         .arg(config->gamemodePrimaryDisplay()));
         if (!gamemodeDisplays.isEmpty()) {
-            displayManager->switchToDisplays(gamemodeDisplays, config->gamemodePrimaryDisplay());
+            bool ok = displayManager->switchToDisplays(gamemodeDisplays, config->gamemodePrimaryDisplay());
+            LogManager::info(QString("Switch result: %1").arg(ok ? "success" : "failed"));
+        } else {
+            LogManager::warning("No gamemode displays configured — nothing to switch");
         }
     }
 }

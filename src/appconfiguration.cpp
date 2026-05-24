@@ -51,6 +51,7 @@ void AppConfiguration::loadSettings()
     m_disableMonitorSwitch = m_settings.value("disable_monitor_switch", false).toBool();
 
     m_gamemodeDisplays.clear();
+    bool migrated = false;
     QString displaysJson = m_settings.value("gamemode_displays", "").toString();
     if (!displaysJson.isEmpty()) {
         QJsonDocument doc = QJsonDocument::fromJson(displaysJson.toUtf8());
@@ -80,6 +81,7 @@ void AppConfiguration::loadSettings()
         m_settings.remove("gamemode_display_width");
         m_settings.remove("gamemode_display_height");
         m_settings.remove("gamemode_display_refresh_rate");
+        migrated = true;
     }
 
     m_gamemodePrimaryDisplay = m_settings.value("gamemode_primary_display", "").toString();
@@ -95,6 +97,10 @@ void AppConfiguration::loadSettings()
 
     m_gamemode = m_settings.value("gamemode", false).toBool();
     m_firstRun = m_settings.value("first_run", true).toBool();
+
+    if (migrated) {
+        saveSettings();
+    }
 }
 
 void AppConfiguration::saveSettings()
