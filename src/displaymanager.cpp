@@ -447,37 +447,87 @@ bool DisplayManager::setOnlyDisplaysWithModes(const std::vector<DisplayTarget> &
     std::vector<UINT32> sourceModeIndices;
     UINT32 primarySourceModeIdx = DISPLAYCONFIG_PATH_MODE_IDX_INVALID;
 
-    for (UINT32 i = 0; i < pathCount; i++) {
+    auto sourceKey = [](const LUID &adapter, UINT32 id) -> std::pair<uint64_t, uint32_t> {
+        return std::make_pair(((uint64_t)adapter.HighPart << 32) | (uint32_t)adapter.LowPart, id);
+    };
+
+    auto getMonitorPathForPath = [&](UINT32 i, std::wstring &out) -> bool {
         DISPLAYCONFIG_TARGET_DEVICE_NAME targetName = {};
         targetName.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_TARGET_NAME;
         targetName.header.size = sizeof(targetName);
         targetName.header.adapterId = paths[i].targetInfo.adapterId;
         targetName.header.id = paths[i].targetInfo.id;
+        if (DisplayConfigGetDeviceInfo(&targetName.header) != ERROR_SUCCESS) return false;
+        out = targetName.monitorDevicePath;
+        return true;
+    };
 
-        if (DisplayConfigGetDeviceInfo(&targetName.header) != ERROR_SUCCESS) {
+    // Indices into the `paths` array, in the order we want to process them.
+    std::vector<UINT32> chosenPathIndices;
+    std::set<std::pair<uint64_t, uint32_t>> usedSources;
+
+    // Pass 1: claim ACTIVE paths first — their source IDs are already in use by Windows.
+    for (UINT32 i = 0; i < pathCount; i++) {
+        if (!(paths[i].flags & DISPLAYCONFIG_PATH_ACTIVE)) continue;
+        std::wstring devicePath;
+        if (!getMonitorPathForPath(i, devicePath)) continue;
+
+        for (size_t t = 0; t < targets.size(); t++) {
+            if (targetMatched[t]) continue;
+            if (targets[t].device_path != devicePath) continue;
+            targetMatched[t] = true;
+            chosenPathIndices.push_back(i);
+            usedSources.insert(sourceKey(paths[i].sourceInfo.adapterId, paths[i].sourceInfo.id));
+            break;
+        }
+    }
+
+    // Pass 2: pick inactive paths for the remaining targets, choosing a source not yet taken.
+    for (size_t t = 0; t < targets.size(); t++) {
+        if (targetMatched[t]) continue;
+        UINT32 bestPathIdx = UINT32_MAX;
+        for (UINT32 i = 0; i < pathCount; i++) {
+            if (paths[i].flags & DISPLAYCONFIG_PATH_ACTIVE) continue;
+            std::wstring devicePath;
+            if (!getMonitorPathForPath(i, devicePath)) continue;
+            if (devicePath != targets[t].device_path) continue;
+
+            auto key = sourceKey(paths[i].sourceInfo.adapterId, paths[i].sourceInfo.id);
+            if (usedSources.count(key)) continue;
+            bestPathIdx = i;
+            break;
+        }
+        if (bestPathIdx == UINT32_MAX) {
+            LogManager::warning(QString("No free source-path for inactive target %1")
+                                .arg(QString::fromStdWString(targets[t].device_path)));
             continue;
         }
+        targetMatched[t] = true;
+        chosenPathIndices.push_back(bestPathIdx);
+        usedSources.insert(sourceKey(paths[bestPathIdx].sourceInfo.adapterId, paths[bestPathIdx].sourceInfo.id));
+    }
 
-        std::wstring devicePath = targetName.monitorDevicePath;
+    LogManager::debug(QString("Chose %1 paths after dedup").arg(chosenPathIndices.size()));
+
+    for (UINT32 i : chosenPathIndices) {
+        std::wstring devicePath;
+        if (!getMonitorPathForPath(i, devicePath)) continue;
 
         size_t matchedIdx = SIZE_MAX;
         for (size_t t = 0; t < targets.size(); t++) {
-            if (!targetMatched[t] && targets[t].device_path == devicePath) {
+            if (targets[t].device_path == devicePath) {
                 matchedIdx = t;
                 break;
             }
         }
-
-        if (matchedIdx == SIZE_MAX) {
-            continue;
-        }
-        targetMatched[matchedIdx] = true;
+        if (matchedIdx == SIZE_MAX) continue;
 
         const DisplayTarget &target = targets[matchedIdx];
         bool wasActive = (paths[i].flags & DISPLAYCONFIG_PATH_ACTIVE) != 0;
-        LogManager::debug(QString("Matched target=%1 wasActive=%2")
+        LogManager::debug(QString("Building path for target=%1 wasActive=%2 sourceId=%3")
                           .arg(QString::fromStdWString(target.device_path))
-                          .arg(wasActive ? "true" : "false"));
+                          .arg(wasActive ? "true" : "false")
+                          .arg(paths[i].sourceInfo.id));
 
         auto path = paths[i];
         path.flags = DISPLAYCONFIG_PATH_ACTIVE;
