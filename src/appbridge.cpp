@@ -10,6 +10,7 @@
 #include <QApplication>
 #include <QVariant>
 #include <QThread>
+#include <QTimer>
 #include "logmanager.h"
 
 AppBridge* AppBridge::s_instance = nullptr;
@@ -118,8 +119,14 @@ void AppBridge::onWindowActivated(QString windowTitle)
 
         // The target window was rendered before our display switch — if the primary
         // monitor changed, the window is still sitting on the old primary. Move it.
+        // Deferred via QTimer because right after SetDisplayConfig returns, Windows
+        // and the target app are still settling: MonitorFromWindow can already
+        // report the new primary while the app keeps painting where it was.
         if (!config->disableMonitorSwitch()) {
-            Utils::moveWindowToPrimaryMonitor(windowMonitor->trackedWindow());
+            WindowEventMonitor *wm = windowMonitor;
+            QTimer::singleShot(1500, this, [wm]() {
+                Utils::moveWindowToPrimaryMonitor(wm->trackedWindow());
+            });
         }
     }
     // Don't exit game mode when switching to a different window
