@@ -1,5 +1,8 @@
 #include "appconfiguration.h"
 #include "shortcutmanager.h"
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 
 AppConfiguration* AppConfiguration::s_instance = nullptr;
 
@@ -46,10 +49,45 @@ void AppConfiguration::loadSettings()
     m_desktopAudioDeviceId = m_settings.value("desktop_audio_device_id", "").toString();
 
     m_disableMonitorSwitch = m_settings.value("disable_monitor_switch", false).toBool();
-    m_gamemodeDisplayDevice = m_settings.value("gamemode_display_device", "").toString();
-    m_gamemodeDisplayWidth = m_settings.value("gamemode_display_width", 3840).toUInt();
-    m_gamemodeDisplayHeight = m_settings.value("gamemode_display_height", 2160).toUInt();
-    m_gamemodeDisplayRefreshRate = m_settings.value("gamemode_display_refresh_rate", 60).toUInt();
+
+    m_gamemodeDisplays.clear();
+    bool migrated = false;
+    QString displaysJson = m_settings.value("gamemode_displays", "").toString();
+    if (!displaysJson.isEmpty()) {
+        QJsonDocument doc = QJsonDocument::fromJson(displaysJson.toUtf8());
+        if (doc.isArray()) {
+            for (const QJsonValue &val : doc.array()) {
+                QJsonObject obj = val.toObject();
+                QVariantMap entry;
+                entry["devicePath"] = obj.value("devicePath").toString();
+                entry["width"] = obj.value("width").toInt();
+                entry["height"] = obj.value("height").toInt();
+                entry["refreshRate"] = obj.value("refreshRate").toInt();
+                m_gamemodeDisplays.append(entry);
+            }
+        }
+    } else if (m_settings.contains("gamemode_display_device")) {
+        // Migrate legacy single-display settings
+        QString legacyDevice = m_settings.value("gamemode_display_device", "").toString();
+        if (!legacyDevice.isEmpty()) {
+            QVariantMap entry;
+            entry["devicePath"] = legacyDevice;
+            entry["width"] = m_settings.value("gamemode_display_width", 3840).toInt();
+            entry["height"] = m_settings.value("gamemode_display_height", 2160).toInt();
+            entry["refreshRate"] = m_settings.value("gamemode_display_refresh_rate", 60).toInt();
+            m_gamemodeDisplays.append(entry);
+        }
+        m_settings.remove("gamemode_display_device");
+        m_settings.remove("gamemode_display_width");
+        m_settings.remove("gamemode_display_height");
+        m_settings.remove("gamemode_display_refresh_rate");
+        migrated = true;
+    }
+
+    m_gamemodePrimaryDisplay = m_settings.value("gamemode_primary_display", "").toString();
+    if (m_gamemodePrimaryDisplay.isEmpty() && !m_gamemodeDisplays.isEmpty()) {
+        m_gamemodePrimaryDisplay = m_gamemodeDisplays.first().toMap().value("devicePath").toString();
+    }
 
     m_closeDiscordAction = m_settings.value("close_discord_action", false).toBool();
     m_performancePowerplanAction = m_settings.value("performance_powerplan_action", false).toBool();
@@ -59,6 +97,10 @@ void AppConfiguration::loadSettings()
 
     m_gamemode = m_settings.value("gamemode", false).toBool();
     m_firstRun = m_settings.value("first_run", true).toBool();
+
+    if (migrated) {
+        saveSettings();
+    }
 }
 
 void AppConfiguration::saveSettings()
@@ -76,10 +118,20 @@ void AppConfiguration::saveSettings()
     m_settings.setValue("desktop_audio_device_id", m_desktopAudioDeviceId);
 
     m_settings.setValue("disable_monitor_switch", m_disableMonitorSwitch);
-    m_settings.setValue("gamemode_display_device", m_gamemodeDisplayDevice);
-    m_settings.setValue("gamemode_display_width", m_gamemodeDisplayWidth);
-    m_settings.setValue("gamemode_display_height", m_gamemodeDisplayHeight);
-    m_settings.setValue("gamemode_display_refresh_rate", m_gamemodeDisplayRefreshRate);
+
+    QJsonArray displaysArray;
+    for (const QVariant &entry : m_gamemodeDisplays) {
+        QVariantMap map = entry.toMap();
+        QJsonObject obj;
+        obj["devicePath"] = map.value("devicePath").toString();
+        obj["width"] = map.value("width").toInt();
+        obj["height"] = map.value("height").toInt();
+        obj["refreshRate"] = map.value("refreshRate").toInt();
+        displaysArray.append(obj);
+    }
+    m_settings.setValue("gamemode_displays",
+                        QString::fromUtf8(QJsonDocument(displaysArray).toJson(QJsonDocument::Compact)));
+    m_settings.setValue("gamemode_primary_display", m_gamemodePrimaryDisplay);
 
     m_settings.setValue("close_discord_action", m_closeDiscordAction);
     m_settings.setValue("performance_powerplan_action", m_performancePowerplanAction);
@@ -199,39 +251,42 @@ void AppConfiguration::setDisableMonitorSwitch(bool value)
     }
 }
 
-void AppConfiguration::setGamemodeDisplayDevice(const QString &value)
+void AppConfiguration::setGamemodeDisplays(const QVariantList &value)
 {
-    if (m_gamemodeDisplayDevice != value) {
-        m_gamemodeDisplayDevice = value;
+    if (m_gamemodeDisplays != value) {
+        m_gamemodeDisplays = value;
+
+        bool primaryStillPresent = false;
+        for (const QVariant &entry : m_gamemodeDisplays) {
+            if (entry.toMap().value("devicePath").toString() == m_gamemodePrimaryDisplay) {
+                primaryStillPresent = true;
+                break;
+            }
+        }
+        if (!primaryStillPresent) {
+            QString newPrimary = m_gamemodeDisplays.isEmpty()
+                ? QString()
+                : m_gamemodeDisplays.first().toMap().value("devicePath").toString();
+            if (newPrimary != m_gamemodePrimaryDisplay) {
+                m_gamemodePrimaryDisplay = newPrimary;
+                saveSettings();
+                emit gamemodeDisplaysChanged();
+                emit gamemodePrimaryDisplayChanged();
+                return;
+            }
+        }
+
         saveSettings();
-        emit gamemodeDisplayDeviceChanged();
+        emit gamemodeDisplaysChanged();
     }
 }
 
-void AppConfiguration::setGamemodeDisplayWidth(quint32 value)
+void AppConfiguration::setGamemodePrimaryDisplay(const QString &value)
 {
-    if (m_gamemodeDisplayWidth != value) {
-        m_gamemodeDisplayWidth = value;
+    if (m_gamemodePrimaryDisplay != value) {
+        m_gamemodePrimaryDisplay = value;
         saveSettings();
-        emit gamemodeDisplayWidthChanged();
-    }
-}
-
-void AppConfiguration::setGamemodeDisplayHeight(quint32 value)
-{
-    if (m_gamemodeDisplayHeight != value) {
-        m_gamemodeDisplayHeight = value;
-        saveSettings();
-        emit gamemodeDisplayHeightChanged();
-    }
-}
-
-void AppConfiguration::setGamemodeDisplayRefreshRate(quint32 value)
-{
-    if (m_gamemodeDisplayRefreshRate != value) {
-        m_gamemodeDisplayRefreshRate = value;
-        saveSettings();
-        emit gamemodeDisplayRefreshRateChanged();
+        emit gamemodePrimaryDisplayChanged();
     }
 }
 
@@ -314,10 +369,8 @@ void AppConfiguration::resetToDefaults()
     setDesktopAudioDeviceId("");
 
     setDisableMonitorSwitch(false);
-    setGamemodeDisplayDevice("");
-    setGamemodeDisplayWidth(3840);
-    setGamemodeDisplayHeight(2160);
-    setGamemodeDisplayRefreshRate(60);
+    setGamemodeDisplays(QVariantList());
+    setGamemodePrimaryDisplay("");
 
     setCloseDiscordAction(false);
     setPerformancePowerplanAction(false);

@@ -256,3 +256,49 @@ bool Utils::isSunshineStreaming()
     LogManager::debug("Sunshine streaming not detected");
     return false;
 }
+
+void Utils::moveWindowToPrimaryMonitor(HWND hwnd)
+{
+    if (!hwnd || !IsWindow(hwnd)) {
+        LogManager::debug("moveWindowToPrimaryMonitor: invalid hwnd");
+        return;
+    }
+
+    HMONITOR primaryMon = MonitorFromPoint({0, 0}, MONITOR_DEFAULTTOPRIMARY);
+    MONITORINFO mi = {};
+    mi.cbSize = sizeof(mi);
+    if (!GetMonitorInfoW(primaryMon, &mi)) {
+        LogManager::warning("moveWindowToPrimaryMonitor: GetMonitorInfo failed");
+        return;
+    }
+
+    int width = mi.rcMonitor.right - mi.rcMonitor.left;
+    int height = mi.rcMonitor.bottom - mi.rcMonitor.top;
+
+    WINDOWPLACEMENT wp = {};
+    wp.length = sizeof(wp);
+    GetWindowPlacement(hwnd, &wp);
+    bool wasMaximized = (wp.showCmd == SW_SHOWMAXIMIZED);
+
+    // Always force-move. Right after a display switch the window may already
+    // appear to be "on primary" by virtue of MonitorFromWindow returning the
+    // new primary handle, while the app inside it is still rendering at the
+    // previous physical location. An unconditional SetWindowPos pokes the
+    // window/DWM into actually relocating.
+    if (wasMaximized) {
+        ShowWindow(hwnd, SW_RESTORE);
+    }
+
+    SetWindowPos(hwnd, nullptr,
+                 mi.rcMonitor.left, mi.rcMonitor.top,
+                 width, height,
+                 SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+
+    if (wasMaximized) {
+        ShowWindow(hwnd, SW_MAXIMIZE);
+    }
+
+    LogManager::info(QString("Moved window to primary monitor at (%1, %2) %3x%4 (wasMaximized=%5)")
+                     .arg(mi.rcMonitor.left).arg(mi.rcMonitor.top).arg(width).arg(height)
+                     .arg(wasMaximized ? "yes" : "no"));
+}

@@ -10,6 +10,7 @@
 #include <QApplication>
 #include <QVariant>
 #include <QThread>
+#include <QTimer>
 #include "logmanager.h"
 
 AppBridge* AppBridge::s_instance = nullptr;
@@ -115,6 +116,18 @@ void AppBridge::onWindowActivated(QString windowTitle)
             Utils::skipBigPictureIntro();
         }
         handleAudioChanges(false);
+
+        // The target window was rendered before our display switch — if the primary
+        // monitor changed, the window is still sitting on the old primary. Move it.
+        // Deferred via QTimer because right after SetDisplayConfig returns, Windows
+        // and the target app are still settling: MonitorFromWindow can already
+        // report the new primary while the app keeps painting where it was.
+        if (!config->disableMonitorSwitch()) {
+            WindowEventMonitor *wm = windowMonitor;
+            QTimer::singleShot(1500, this, [wm]() {
+                Utils::moveWindowToPrimaryMonitor(wm->trackedWindow());
+            });
+        }
     }
     // Don't exit game mode when switching to a different window
     // Game mode should persist as long as the target window exists
@@ -143,16 +156,23 @@ void AppBridge::handleMonitorChanges(bool isDesktopMode)
 {
     AppConfiguration* config = AppConfiguration::instance();
 
+    LogManager::info(QString("handleMonitorChanges: isDesktopMode=%1 disableMonitorSwitch=%2")
+                     .arg(isDesktopMode ? "true" : "false")
+                     .arg(config->disableMonitorSwitch() ? "true" : "false"));
+
     if (config->disableMonitorSwitch())
         return;
 
     DisplayManager* displayManager = DisplayManager::instance();
-    if (!displayManager)
+    if (!displayManager) {
+        LogManager::error("handleMonitorChanges: DisplayManager instance is null");
         return;
+    }
 
     if (isDesktopMode) {
-        // Restore original configuration
-        displayManager->restoreOriginalConfiguration();
+        LogManager::info("Restoring original display configuration");
+        bool ok = displayManager->restoreOriginalConfiguration();
+        LogManager::info(QString("Restore result: %1").arg(ok ? "success" : "failed"));
         // Clear the persistent state file after successful restore
         m_displayStateManager.clearSavedState();
     } else {
@@ -174,19 +194,16 @@ void AppBridge::handleMonitorChanges(bool isDesktopMode)
             LogManager::info("Started listening for new audio devices. Current devices: " + QString::number(m_audioDeviceIdsBeforeMonitorSwitch.size()));
         }
 
-        // Switch to gamemode display with custom resolution
-        QString displayDevice = config->gamemodeDisplayDevice();
-        if (!displayDevice.isEmpty()) {
-            quint32 width = config->gamemodeDisplayWidth();
-            quint32 height = config->gamemodeDisplayHeight();
-            quint32 refreshRate = config->gamemodeDisplayRefreshRate();
-
-            if (width > 0 && height > 0 && refreshRate > 0) {
-                displayManager->switchToDisplayWithResolution(displayDevice, width, height, refreshRate);
-            } else {
-                // Fallback to default switching if resolution not set
-                displayManager->switchToDisplay(displayDevice);
-            }
+        // Switch to gamemode displays (one or more, each with its own resolution)
+        QVariantList gamemodeDisplays = config->gamemodeDisplays();
+        LogManager::info(QString("Gamemode displays configured: %1, primary=%2")
+                         .arg(gamemodeDisplays.size())
+                         .arg(config->gamemodePrimaryDisplay()));
+        if (!gamemodeDisplays.isEmpty()) {
+            bool ok = displayManager->switchToDisplays(gamemodeDisplays, config->gamemodePrimaryDisplay());
+            LogManager::info(QString("Switch result: %1").arg(ok ? "success" : "failed"));
+        } else {
+            LogManager::warning("No gamemode displays configured — nothing to switch");
         }
     }
 }

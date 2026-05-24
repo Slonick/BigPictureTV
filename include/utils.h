@@ -21,6 +21,7 @@ namespace Utils {
     int getHDRStatus();
     void setHDR(bool enable);
     bool isSunshineStreaming();
+    void moveWindowToPrimaryMonitor(HWND hwnd);
 }
 
 #endif // UTILS_H
