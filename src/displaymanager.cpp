@@ -448,6 +448,7 @@ bool DisplayManager::setOnlyDisplaysWithModes(const std::vector<DisplayTarget> &
     std::vector<DISPLAYCONFIG_MODE_INFO> newModes;
     std::vector<bool> targetMatched(targets.size(), false);
     std::vector<UINT32> sourceModeIndices;
+    std::vector<bool> sourceNewlyActivated;
     UINT32 primarySourceModeIdx = DISPLAYCONFIG_PATH_MODE_IDX_INVALID;
 
     auto sourceKey = [](const LUID &adapter, UINT32 id) -> std::pair<uint64_t, uint32_t> {
@@ -543,6 +544,7 @@ bool DisplayManager::setOnlyDisplaysWithModes(const std::vector<DisplayTarget> &
         bool hasExistingTarget = (path.targetInfo.modeInfoIdx != DISPLAYCONFIG_PATH_MODE_IDX_INVALID &&
                                   path.targetInfo.modeInfoIdx < modeCount);
 
+        bool isNewlyActivated = !(hasExistingSource && hasExistingTarget);
         if (hasExistingSource && hasExistingTarget) {
             // Active path: keep existing mode info verbatim. Resolution / refresh
             // changes (if any) are applied per-monitor via ChangeDisplaySettingsExW
@@ -594,6 +596,7 @@ bool DisplayManager::setOnlyDisplaysWithModes(const std::vector<DisplayTarget> &
         }
 
         sourceModeIndices.push_back(sourceModeIdx);
+        sourceNewlyActivated.push_back(isNewlyActivated);
         if (target.is_primary) {
             primarySourceModeIdx = sourceModeIdx;
         }
@@ -616,6 +619,34 @@ bool DisplayManager::setOnlyDisplaysWithModes(const std::vector<DisplayTarget> &
         }
     }
 
+    // Lay out newly-activated displays to the right of any existing ones so they
+    // don't collide on (0, 0). Existing active monitors keep their previously-saved
+    // positions; only the new ones get fresh slots.
+    LONG existingRightEdge = 0;
+    bool anyExisting = false;
+    for (size_t k = 0; k < sourceModeIndices.size(); k++) {
+        if (sourceNewlyActivated[k]) continue;
+        UINT32 idx = sourceModeIndices[k];
+        if (idx >= newModes.size()) continue;
+        LONG right = newModes[idx].sourceMode.position.x + (LONG)newModes[idx].sourceMode.width;
+        if (!anyExisting || right > existingRightEdge) {
+            existingRightEdge = right;
+            anyExisting = true;
+        }
+    }
+    LONG nextX = anyExisting ? existingRightEdge : 0;
+    for (size_t k = 0; k < sourceModeIndices.size(); k++) {
+        if (!sourceNewlyActivated[k]) continue;
+        UINT32 idx = sourceModeIndices[k];
+        if (idx >= newModes.size()) continue;
+        newModes[idx].sourceMode.position.x = nextX;
+        newModes[idx].sourceMode.position.y = 0;
+        LogManager::debug(QString("Placed newly-activated source at (%1, 0), width=%2")
+                          .arg(nextX).arg(newModes[idx].sourceMode.width));
+        nextX += (LONG)newModes[idx].sourceMode.width;
+    }
+
+    // Then translate the whole layout so the chosen primary lands at (0, 0).
     if (primarySourceModeIdx != DISPLAYCONFIG_PATH_MODE_IDX_INVALID &&
         primarySourceModeIdx < newModes.size()) {
         LONG dx = newModes[primarySourceModeIdx].sourceMode.position.x;
