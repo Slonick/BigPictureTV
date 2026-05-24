@@ -1,6 +1,7 @@
 #include "displaymanager.h"
 #include "logmanager.h"
 #include <QDebug>
+#include <functional>
 #include <map>
 #include <set>
 #include <tuple>
@@ -720,36 +721,235 @@ static std::wstring findGdiNameForMonitor(const std::wstring &targetMonitorPath)
     return std::wstring();
 }
 
+static QByteArray readMonitorEdid(const QString &devicePath)
+{
+    QString path = devicePath;
+    if (path.startsWith("\\\\?\\")) path = path.mid(4);
+    QStringList parts = path.split('#', Qt::SkipEmptyParts);
+    if (parts.size() < 3) return QByteArray();
+
+    std::wstring regPath = QString("SYSTEM\\CurrentControlSet\\Enum\\DISPLAY\\%1\\%2\\Device Parameters")
+                               .arg(parts[1], parts[2]).toStdWString();
+
+    HKEY key = nullptr;
+    if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, regPath.c_str(), 0, KEY_READ, &key) != ERROR_SUCCESS) {
+        return QByteArray();
+    }
+
+    DWORD type = 0;
+    DWORD size = 0;
+    QByteArray result;
+    if (RegQueryValueExW(key, L"EDID", nullptr, &type, nullptr, &size) == ERROR_SUCCESS &&
+        type == REG_BINARY && size > 0 && size < 4096) {
+        result.resize((int)size);
+        if (RegQueryValueExW(key, L"EDID", nullptr, &type,
+                             reinterpret_cast<LPBYTE>(result.data()), &size) != ERROR_SUCCESS) {
+            result.clear();
+        }
+    }
+    RegCloseKey(key);
+    return result;
+}
+
+namespace {
+struct VicMode { quint8 vic; quint16 w; quint16 h; quint16 r; };
+// Subset of CTA-861 VIC codes — covers SDTV/HDTV up to 4K@240. Multiple VICs that
+// represent the same (w,h,r) with different color subsampling get deduped naturally.
+static const VicMode kVicTable[] = {
+    {  1,  640,  480, 60}, {  2,  720,  480, 60}, {  3,  720,  480, 60},
+    {  4, 1280,  720, 60}, {  6,  720,  480, 60}, {  7,  720,  480, 60},
+    { 16, 1920, 1080, 60}, { 17,  720,  576, 50}, { 18,  720,  576, 50},
+    { 19, 1280,  720, 50}, { 31, 1920, 1080, 50}, { 32, 1920, 1080, 24},
+    { 33, 1920, 1080, 25}, { 34, 1920, 1080, 30}, { 60, 1280,  720, 24},
+    { 61, 1280,  720, 25}, { 62, 1280,  720, 30}, { 63, 1920, 1080,120},
+    { 64, 1920, 1080,100}, { 65, 1280,  720,100}, { 66, 1280,  720,120},
+    { 93, 3840, 2160, 24}, { 94, 3840, 2160, 25}, { 95, 3840, 2160, 30},
+    { 96, 3840, 2160, 50}, { 97, 3840, 2160, 60}, { 98, 4096, 2160, 24},
+    { 99, 4096, 2160, 25}, {100, 4096, 2160, 30}, {101, 4096, 2160, 50},
+    {102, 4096, 2160, 60}, {103, 3840, 2160,100}, {104, 3840, 2160,120},
+    {117, 3840, 2160,100}, {118, 3840, 2160,120}, {119, 3840, 2160,100},
+    {120, 3840, 2160,120}, {193, 5120, 2160,100}, {194, 5120, 2160,120},
+    {195, 7680, 4320, 24}, {196, 7680, 4320, 25}, {197, 7680, 4320, 30},
+    {198, 7680, 4320, 48}, {199, 7680, 4320, 50}, {200, 7680, 4320, 60},
+    {201, 7680, 4320,100}, {202, 7680, 4320,120},
+};
+}
+
+static void parseEdidDtd(const quint8 *dtd,
+                         std::function<void(quint32, quint32, quint32)> addMode)
+{
+    quint16 pixelClock = dtd[0] | (dtd[1] << 8);
+    if (pixelClock == 0) return; // descriptor, not a timing
+    quint32 hActive = dtd[2] | ((quint32)(dtd[4] & 0xF0) << 4);
+    quint32 hBlank  = dtd[3] | ((quint32)(dtd[4] & 0x0F) << 8);
+    quint32 vActive = dtd[5] | ((quint32)(dtd[7] & 0xF0) << 4);
+    quint32 vBlank  = dtd[6] | ((quint32)(dtd[7] & 0x0F) << 8);
+    if (dtd[17] & 0x80) return; // interlaced
+    quint32 htotal = hActive + hBlank;
+    quint32 vtotal = vActive + vBlank;
+    if (htotal == 0 || vtotal == 0) return;
+
+    quint64 pixelHz = (quint64)pixelClock * 10000ULL;
+    quint64 denom = (quint64)htotal * vtotal;
+    quint32 refresh = (quint32)((pixelHz + denom / 2) / denom);
+    addMode(hActive, vActive, refresh);
+}
+
+static void parseEdid(const QByteArray &edid,
+                      std::function<void(quint32, quint32, quint32)> addMode)
+{
+    if (edid.size() < 128) return;
+    const quint8 *b = reinterpret_cast<const quint8 *>(edid.constData());
+
+    static const quint8 header[] = {0,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0};
+    if (memcmp(b, header, 8) != 0) return;
+
+    // Established Timings I (byte 35)
+    static const struct { quint8 mask; quint32 w, h, r; } estI[] = {
+        {0x80, 720, 400, 70}, {0x40, 720, 400, 88},
+        {0x20, 640, 480, 60}, {0x10, 640, 480, 67},
+        {0x08, 640, 480, 72}, {0x04, 640, 480, 75},
+        {0x02, 800, 600, 56}, {0x01, 800, 600, 60},
+    };
+    for (auto &e : estI) {
+        if (b[35] & e.mask) addMode(e.w, e.h, e.r);
+    }
+    // Established Timings II (byte 36)
+    static const struct { quint8 mask; quint32 w, h, r; } estII[] = {
+        {0x80, 800, 600, 72}, {0x40, 800, 600, 75},
+        {0x20, 832, 624, 75},
+        {0x08, 1024, 768, 60}, {0x04, 1024, 768, 70}, {0x02, 1024, 768, 75},
+        {0x01, 1280, 1024, 75},
+    };
+    for (auto &e : estII) {
+        if (b[36] & e.mask) addMode(e.w, e.h, e.r);
+    }
+
+    // Base block DTDs (bytes 54..125, four 18-byte entries)
+    for (int i = 0; i < 4; i++) {
+        parseEdidDtd(b + 54 + i * 18, addMode);
+    }
+
+    // Extension blocks
+    quint8 extCount = b[126];
+    int totalLen = edid.size();
+    for (int e = 0; e < extCount; e++) {
+        int extOffset = 128 * (e + 1);
+        if (extOffset + 128 > totalLen) break;
+        const quint8 *ext = b + extOffset;
+        if (ext[0] != 0x02) continue; // not CTA-861
+        quint8 dtdOffset = ext[2];
+        if (dtdOffset == 0) continue;
+
+        // Data block collection (bytes 4 to dtdOffset-1)
+        int idx = 4;
+        while (idx < dtdOffset && idx < 128) {
+            quint8 tag = (ext[idx] & 0xE0) >> 5;
+            quint8 len = ext[idx] & 0x1F;
+            if (tag == 2) { // Short Video Descriptors
+                for (int i = 1; i <= len && (idx + i) < 128; i++) {
+                    quint8 vic = ext[idx + i] & 0x7F;
+                    for (auto &v : kVicTable) {
+                        if (v.vic == vic) { addMode(v.w, v.h, v.r); break; }
+                    }
+                }
+            } else if (tag == 3 && len >= 7) { // Vendor-Specific Data Block — may carry HDMI 4K codes
+                // HDMI VSDB: bytes 1-3 are OUI, check for 00-0C-03 (HDMI Licensing LLC)
+                if (ext[idx + 1] == 0x03 && ext[idx + 2] == 0x0C && ext[idx + 3] == 0x00) {
+                    // HDMI_VIC codes are after byte 7+VLEN+ALEN; complex parsing — skip for now.
+                }
+            }
+            idx += len + 1;
+        }
+
+        // DTDs in the extension block
+        int dtdIdx = dtdOffset;
+        while (dtdIdx + 18 <= 128) {
+            // First two bytes 0 => end of DTDs
+            if (ext[dtdIdx] == 0 && ext[dtdIdx + 1] == 0) break;
+            parseEdidDtd(ext + dtdIdx, addMode);
+            dtdIdx += 18;
+        }
+    }
+}
+
 QVariantList DisplayManager::getSupportedModes(const QString &devicePath)
 {
     QVariantList result;
+    std::set<std::tuple<quint32, quint32, quint32>> seen;
+    auto addMode = [&](quint32 w, quint32 h, quint32 r) {
+        if (w < 640 || h < 480 || r < 24) return;
+        auto key = std::make_tuple(w, h, r);
+        if (!seen.insert(key).second) return;
+        QVariantMap m;
+        m["width"] = w;
+        m["height"] = h;
+        m["refreshRate"] = r;
+        result.append(m);
+    };
+
     std::wstring targetPath = devicePath.toStdWString();
     std::wstring gdiName = findGdiNameForMonitor(targetPath);
-
-    if (gdiName.empty()) {
-        qWarning() << "Could not find GDI device name for" << devicePath;
-        return result;
+    int fromEnum = 0;
+    if (!gdiName.empty()) {
+        DEVMODEW devMode = {};
+        devMode.dmSize = sizeof(devMode);
+        for (DWORD i = 0; EnumDisplaySettingsExW(gdiName.c_str(), i, &devMode, 0); i++) {
+            if (devMode.dmBitsPerPel != 32) continue;
+            if (devMode.dmDisplayFlags & DM_INTERLACED) continue;
+            size_t before = seen.size();
+            addMode((quint32)devMode.dmPelsWidth, (quint32)devMode.dmPelsHeight,
+                    (quint32)devMode.dmDisplayFrequency);
+            if (seen.size() > before) fromEnum++;
+        }
+    } else {
+        LogManager::warning(QString("Could not find GDI device name for ") + devicePath);
     }
 
-    std::set<std::tuple<DWORD, DWORD, DWORD>> seen;
-
-    DEVMODEW devMode = {};
-    devMode.dmSize = sizeof(devMode);
-    for (DWORD i = 0; EnumDisplaySettingsExW(gdiName.c_str(), i, &devMode, 0); i++) {
-        if (devMode.dmBitsPerPel != 32) continue;
-        if (devMode.dmDisplayFlags & DM_INTERLACED) continue;
-        if (devMode.dmDisplayFrequency < 24) continue;
-
-        auto key = std::make_tuple(devMode.dmPelsWidth, devMode.dmPelsHeight, devMode.dmDisplayFrequency);
-        if (!seen.insert(key).second) continue;
-
-        QVariantMap entry;
-        entry["width"] = (quint32)devMode.dmPelsWidth;
-        entry["height"] = (quint32)devMode.dmPelsHeight;
-        entry["refreshRate"] = (quint32)devMode.dmDisplayFrequency;
-        result.append(entry);
+    // EDID parse — fills in modes the source's mode list misses (especially for
+    // inactive monitors where Windows reports a truncated set).
+    QByteArray edid = readMonitorEdid(devicePath);
+    int fromEdid = 0;
+    if (!edid.isEmpty()) {
+        size_t before = seen.size();
+        parseEdid(edid, addMode);
+        fromEdid = (int)(seen.size() - before);
     }
 
+    // Preferred mode from DisplayConfig — last-resort native mode.
+    UINT32 pathCount = 0, modeCount = 0;
+    if (GetDisplayConfigBufferSizes(QDC_ALL_PATHS, &pathCount, &modeCount) == ERROR_SUCCESS) {
+        std::vector<DISPLAYCONFIG_PATH_INFO> paths(pathCount);
+        std::vector<DISPLAYCONFIG_MODE_INFO> modes(modeCount);
+        if (QueryDisplayConfig(QDC_ALL_PATHS, &pathCount, paths.data(),
+                               &modeCount, modes.data(), nullptr) == ERROR_SUCCESS) {
+            for (UINT32 i = 0; i < pathCount; i++) {
+                DISPLAYCONFIG_TARGET_DEVICE_NAME name = {};
+                name.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_TARGET_NAME;
+                name.header.size = sizeof(name);
+                name.header.adapterId = paths[i].targetInfo.adapterId;
+                name.header.id = paths[i].targetInfo.id;
+                if (DisplayConfigGetDeviceInfo(&name.header) != ERROR_SUCCESS) continue;
+                if (std::wstring(name.monitorDevicePath) != targetPath) continue;
+
+                DISPLAYCONFIG_TARGET_PREFERRED_MODE pref = {};
+                pref.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_TARGET_PREFERRED_MODE;
+                pref.header.size = sizeof(pref);
+                pref.header.adapterId = paths[i].targetInfo.adapterId;
+                pref.header.id = paths[i].targetInfo.id;
+                if (DisplayConfigGetDeviceInfo(&pref.header) == ERROR_SUCCESS) {
+                    const auto &freq = pref.targetMode.targetVideoSignalInfo.vSyncFreq;
+                    quint32 r = (freq.Denominator > 0)
+                        ? (quint32)((freq.Numerator + freq.Denominator / 2) / freq.Denominator) : 60;
+                    addMode(pref.width, pref.height, r);
+                }
+                break;
+            }
+        }
+    }
+
+    LogManager::debug(QString("getSupportedModes(%1): %2 total (enum=%3, edid=%4)")
+                      .arg(devicePath).arg(result.size()).arg(fromEnum).arg(fromEdid));
     return result;
 }
 
