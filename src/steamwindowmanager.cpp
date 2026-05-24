@@ -1,5 +1,6 @@
 #include "steamwindowmanager.h"
 #include <windows.h>
+#include <QLocale>
 #include "logmanager.h"
 
 QString getRegistryValue(const std::wstring &keyPath, const std::wstring &valueName)
@@ -53,6 +54,52 @@ QString SteamWindowManager::getSteamLanguage()
     return getRegistryValue(L"Software\\Valve\\Steam\\steamglobal", L"Language");
 }
 
+static QString systemLocaleToSteamLanguage()
+{
+    QLocale locale = QLocale::system();
+    QLocale::Language lang = locale.language();
+    QLocale::Country country = locale.country();
+
+    switch (lang) {
+    case QLocale::Chinese:
+        return (country == QLocale::Taiwan || country == QLocale::HongKong || country == QLocale::Macau)
+            ? "tchinese" : "schinese";
+    case QLocale::Japanese:    return "japanese";
+    case QLocale::Korean:      return "koreana";
+    case QLocale::Thai:        return "thai";
+    case QLocale::Bulgarian:   return "bulgarian";
+    case QLocale::Czech:       return "czech";
+    case QLocale::Danish:      return "danish";
+    case QLocale::German:      return "german";
+    case QLocale::English:     return "english";
+    case QLocale::Spanish:
+        return (country == QLocale::Mexico || country == QLocale::Argentina ||
+                country == QLocale::Colombia || country == QLocale::Chile ||
+                country == QLocale::Peru || country == QLocale::Venezuela)
+            ? "latam" : "spanish";
+    case QLocale::Greek:       return "greek";
+    case QLocale::French:      return "french";
+    case QLocale::Indonesian:  return "indonesian";
+    case QLocale::Italian:     return "italian";
+    case QLocale::Hungarian:   return "hungarian";
+    case QLocale::Dutch:       return "dutch";
+    case QLocale::NorwegianBokmal:
+    case QLocale::NorwegianNynorsk:
+        return "norwegian";
+    case QLocale::Polish:      return "polish";
+    case QLocale::Portuguese:
+        return (country == QLocale::Brazil) ? "brazilian" : "portuguese";
+    case QLocale::Romanian:    return "romanian";
+    case QLocale::Russian:     return "russian";
+    case QLocale::Finnish:     return "finnish";
+    case QLocale::Swedish:     return "swedish";
+    case QLocale::Turkish:     return "turkish";
+    case QLocale::Vietnamese:  return "vietnamese";
+    case QLocale::Ukrainian:   return "ukrainian";
+    default:                   return QString();
+    }
+}
+
 QString SteamWindowManager::getBigPictureWindowTitle()
 {
     const QMap<QString, QString> BIG_PICTURE_WINDOW_TITLES
@@ -87,7 +134,17 @@ QString SteamWindowManager::getBigPictureWindowTitle()
            {"ukrainian", "Steam у режимі Big Picture"}};
 
     QString language = getSteamLanguage().toLower();
-    return BIG_PICTURE_WINDOW_TITLES.value(language, BIG_PICTURE_WINDOW_TITLES.value("english"));
+    if (language.isEmpty() || !BIG_PICTURE_WINDOW_TITLES.contains(language)) {
+        QString systemLanguage = systemLocaleToSteamLanguage();
+        if (!systemLanguage.isEmpty() && BIG_PICTURE_WINDOW_TITLES.contains(systemLanguage)) {
+            LogManager::debug("Steam language not found in registry, falling back to system locale: " + systemLanguage);
+            language = systemLanguage;
+        } else {
+            LogManager::debug("Steam language not found and no system locale match, falling back to english");
+            language = "english";
+        }
+    }
+    return BIG_PICTURE_WINDOW_TITLES.value(language);
 }
 
 bool SteamWindowManager::isBigPictureRunning()
