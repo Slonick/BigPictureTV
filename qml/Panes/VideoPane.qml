@@ -33,12 +33,13 @@ Pane {
         const list = AppConfiguration.gamemodeDisplays.slice()
         const idx = findDisplayIndex(devicePath)
         if (enabled && idx === -1) {
-            const defaults = DisplayManager.getCurrentOrNativeMode(devicePath)
+            // No custom mode by default — width/height/refreshRate stay 0, meaning
+            // "leave whatever the monitor is currently configured for in Windows".
             list.push({
                 "devicePath": devicePath,
-                "width": defaults.width || 1920,
-                "height": defaults.height || 1080,
-                "refreshRate": defaults.refreshRate || 60
+                "width": 0,
+                "height": 0,
+                "refreshRate": 0
             })
         } else if (!enabled && idx !== -1) {
             list.splice(idx, 1)
@@ -46,6 +47,32 @@ Pane {
             return
         }
         AppConfiguration.gamemodeDisplays = list
+    }
+
+    function setCustomMode(devicePath, on) {
+        const list = AppConfiguration.gamemodeDisplays.slice()
+        const idx = findDisplayIndex(devicePath)
+        if (idx === -1) return
+        const entry = Object.assign({}, list[idx])
+        if (on) {
+            const defaults = DisplayManager.getCurrentOrNativeMode(devicePath)
+            entry.width = defaults.width || 1920
+            entry.height = defaults.height || 1080
+            entry.refreshRate = defaults.refreshRate || 60
+        } else {
+            entry.width = 0
+            entry.height = 0
+            entry.refreshRate = 0
+        }
+        list[idx] = entry
+        AppConfiguration.gamemodeDisplays = list
+    }
+
+    function hasCustomMode(devicePath) {
+        const idx = findDisplayIndex(devicePath)
+        if (idx === -1) return false
+        const e = AppConfiguration.gamemodeDisplays[idx]
+        return (e.width > 0 && e.height > 0 && e.refreshRate > 0)
     }
 
     function updateDisplayMode(devicePath, width, height, refreshRate) {
@@ -195,6 +222,21 @@ Pane {
                         Layout.leftMargin: 20
                         show: monitorEntry.entryEnabled
                         visible: monitorEntry.entryEnabled
+                        title: qsTr("Set custom resolution")
+                        description: qsTr("Override the monitor's current resolution / refresh rate")
+                        additionalControl: Switch {
+                            checked: root.hasCustomMode(monitorEntry.model.devicePath)
+                            onToggled: {
+                                root.setCustomMode(monitorEntry.model.devicePath, checked)
+                            }
+                        }
+                    }
+
+                    Card {
+                        Layout.fillWidth: true
+                        Layout.leftMargin: 20
+                        show: monitorEntry.entryEnabled && root.hasCustomMode(monitorEntry.model.devicePath)
+                        visible: monitorEntry.entryEnabled && root.hasCustomMode(monitorEntry.model.devicePath)
                         title: qsTr("Resolution & refresh rate")
                         additionalControl: RowLayout {
                             spacing: 8

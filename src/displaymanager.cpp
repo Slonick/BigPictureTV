@@ -542,25 +542,17 @@ bool DisplayManager::setOnlyDisplaysWithModes(const std::vector<DisplayTarget> &
                                   path.targetInfo.modeInfoIdx < modeCount);
 
         if (hasExistingSource && hasExistingTarget) {
-            // Active path: reuse existing modes, override resolution/refresh
-            auto sourceMode = modes[path.sourceInfo.modeInfoIdx];
-            auto targetMode = modes[path.targetInfo.modeInfoIdx];
-            if (target.has_mode) {
-                sourceMode.sourceMode.width = target.mode.width;
-                sourceMode.sourceMode.height = target.mode.height;
-                targetMode.targetMode.targetVideoSignalInfo.activeSize.cx = target.mode.width;
-                targetMode.targetMode.targetVideoSignalInfo.activeSize.cy = target.mode.height;
-                targetMode.targetMode.targetVideoSignalInfo.totalSize.cx = target.mode.width;
-                targetMode.targetMode.targetVideoSignalInfo.totalSize.cy = target.mode.height;
-                targetMode.targetMode.targetVideoSignalInfo.vSyncFreq.Numerator = target.mode.refreshRate;
-                targetMode.targetMode.targetVideoSignalInfo.vSyncFreq.Denominator = 1;
-            }
-            newModes.push_back(sourceMode);
+            // Active path: keep existing mode info verbatim. Resolution / refresh
+            // changes (if any) are applied per-monitor via ChangeDisplaySettingsExW
+            // after SetDisplayConfig succeeds — that path is far more tolerant of
+            // timing recomputation than mutating DISPLAYCONFIG_VIDEO_SIGNAL_INFO.
+            newModes.push_back(modes[path.sourceInfo.modeInfoIdx]);
             sourceModeIdx = (UINT32)newModes.size() - 1;
-            newModes.push_back(targetMode);
+            newModes.push_back(modes[path.targetInfo.modeInfoIdx]);
             targetModeIdx = (UINT32)newModes.size() - 1;
         } else {
-            // Inactive path: construct modes from the target's preferred mode
+            // Inactive path: activate it at its preferred mode. The user-requested
+            // resolution / refresh is applied afterwards via ChangeDisplaySettingsExW.
             DISPLAYCONFIG_TARGET_PREFERRED_MODE preferred = {};
             preferred.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_TARGET_PREFERRED_MODE;
             preferred.header.size = sizeof(preferred);
@@ -575,20 +567,15 @@ bool DisplayManager::setOnlyDisplaysWithModes(const std::vector<DisplayTarget> &
                 continue;
             }
 
-            quint32 useWidth = target.has_mode ? target.mode.width : preferred.width;
-            quint32 useHeight = target.has_mode ? target.mode.height : preferred.height;
-            quint32 useRefresh = target.has_mode ? target.mode.refreshRate : 60;
-
-            LogManager::debug(QString("Inactive path: building modes %1x%2@%3 (preferred=%4x%5)")
-                              .arg(useWidth).arg(useHeight).arg(useRefresh)
+            LogManager::debug(QString("Inactive path: activating at preferred mode %1x%2")
                               .arg(preferred.width).arg(preferred.height));
 
             DISPLAYCONFIG_MODE_INFO sourceModeInfo = {};
             sourceModeInfo.infoType = DISPLAYCONFIG_MODE_INFO_TYPE_SOURCE;
             sourceModeInfo.adapterId = paths[i].sourceInfo.adapterId;
             sourceModeInfo.id = paths[i].sourceInfo.id;
-            sourceModeInfo.sourceMode.width = useWidth;
-            sourceModeInfo.sourceMode.height = useHeight;
+            sourceModeInfo.sourceMode.width = preferred.width;
+            sourceModeInfo.sourceMode.height = preferred.height;
             sourceModeInfo.sourceMode.pixelFormat = DISPLAYCONFIG_PIXELFORMAT_32BPP;
             sourceModeInfo.sourceMode.position.x = 0;
             sourceModeInfo.sourceMode.position.y = 0;
@@ -600,15 +587,6 @@ bool DisplayManager::setOnlyDisplaysWithModes(const std::vector<DisplayTarget> &
             targetModeInfo.adapterId = paths[i].targetInfo.adapterId;
             targetModeInfo.id = paths[i].targetInfo.id;
             targetModeInfo.targetMode = preferred.targetMode;
-
-            if (target.has_mode) {
-                targetModeInfo.targetMode.targetVideoSignalInfo.activeSize.cx = useWidth;
-                targetModeInfo.targetMode.targetVideoSignalInfo.activeSize.cy = useHeight;
-                targetModeInfo.targetMode.targetVideoSignalInfo.totalSize.cx = useWidth;
-                targetModeInfo.targetMode.targetVideoSignalInfo.totalSize.cy = useHeight;
-                targetModeInfo.targetMode.targetVideoSignalInfo.vSyncFreq.Numerator = useRefresh;
-                targetModeInfo.targetMode.targetVideoSignalInfo.vSyncFreq.Denominator = 1;
-            }
             newModes.push_back(targetModeInfo);
             targetModeIdx = (UINT32)newModes.size() - 1;
         }
@@ -665,6 +643,51 @@ bool DisplayManager::setOnlyDisplaysWithModes(const std::vector<DisplayTarget> &
     }
 
     LogManager::info("SetDisplayConfig succeeded");
+
+    // Step 2: apply per-monitor resolution / refresh for targets that explicitly
+    // asked for one. ChangeDisplaySettingsExW handles timing recomputation properly.
+    bool anyChange = false;
+    for (const auto &target : targets) {
+        if (!target.has_mode) continue;
+        anyChange = true;
+
+        std::wstring gdiName = findGdiNameForMonitor(target.device_path);
+        if (gdiName.empty()) {
+            LogManager::warning(QString("Custom mode skipped: no GDI name for %1")
+                                .arg(QString::fromStdWString(target.device_path)));
+            continue;
+        }
+
+        DEVMODEW devMode = {};
+        devMode.dmSize = sizeof(devMode);
+        if (!EnumDisplaySettingsExW(gdiName.c_str(), ENUM_CURRENT_SETTINGS, &devMode, 0)) {
+            LogManager::warning(QString("Custom mode skipped: cannot query current DEVMODE for %1")
+                                .arg(QString::fromStdWString(target.device_path)));
+            continue;
+        }
+        devMode.dmPelsWidth = target.mode.width;
+        devMode.dmPelsHeight = target.mode.height;
+        devMode.dmDisplayFrequency = target.mode.refreshRate;
+        devMode.dmFields = DM_PELSWIDTH | DM_PELSHEIGHT | DM_DISPLAYFREQUENCY;
+
+        LONG cds = ChangeDisplaySettingsExW(gdiName.c_str(), &devMode, nullptr,
+                                            CDS_UPDATEREGISTRY | CDS_NORESET, nullptr);
+        if (cds != DISP_CHANGE_SUCCESSFUL) {
+            LogManager::warning(QString("ChangeDisplaySettingsExW failed for %1 mode=%2x%3@%4 err=%5")
+                                .arg(QString::fromStdWString(target.device_path))
+                                .arg(target.mode.width).arg(target.mode.height).arg(target.mode.refreshRate)
+                                .arg(cds));
+        } else {
+            LogManager::info(QString("Queued custom mode for %1: %2x%3@%4")
+                             .arg(QString::fromStdWString(target.device_path))
+                             .arg(target.mode.width).arg(target.mode.height).arg(target.mode.refreshRate));
+        }
+    }
+
+    if (anyChange) {
+        ChangeDisplaySettingsExW(nullptr, nullptr, nullptr, 0, nullptr);
+    }
+
     return true;
 }
 
