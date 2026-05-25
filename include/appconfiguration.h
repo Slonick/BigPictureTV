@@ -38,6 +38,7 @@ class AppConfiguration : public QObject
     Q_PROPERTY(bool pauseMediaAction READ pauseMediaAction WRITE setPauseMediaAction NOTIFY pauseMediaActionChanged)
     Q_PROPERTY(bool disableNightlightAction READ disableNightlightAction WRITE setDisableNightlightAction NOTIFY disableNightlightActionChanged)
     Q_PROPERTY(bool enableHdr READ enableHdr WRITE setEnableHdr NOTIFY enableHdrChanged)
+    Q_PROPERTY(bool beacnAudienceMixRouting READ beacnAudienceMixRouting WRITE setBeacnAudienceMixRouting NOTIFY beacnAudienceMixRoutingChanged)
 
     // Internal state
     Q_PROPERTY(bool gamemode READ gamemode WRITE setGamemode NOTIFY gamemodeChanged)
@@ -71,6 +72,7 @@ public:
     bool pauseMediaAction() const { return m_pauseMediaAction; }
     bool disableNightlightAction() const { return m_disableNightlightAction; }
     bool enableHdr() const { return m_enableHdr; }
+    bool beacnAudienceMixRouting() const { return m_beacnAudienceMixRouting; }
 
     bool gamemode() const { return m_gamemode; }
     bool firstRun() const { return m_firstRun; }
@@ -98,6 +100,7 @@ public:
     void setPauseMediaAction(bool value);
     void setDisableNightlightAction(bool value);
     void setEnableHdr(bool value);
+    void setBeacnAudienceMixRouting(bool value);
 
     void setGamemode(bool value);
     void setFirstRun(bool value);
@@ -127,6 +130,7 @@ signals:
     void pauseMediaActionChanged();
     void disableNightlightActionChanged();
     void enableHdrChanged();
+    void beacnAudienceMixRoutingChanged();
 
     void gamemodeChanged();
     void firstRunChanged();
@@ -164,6 +168,7 @@ private:
     bool m_pauseMediaAction;
     bool m_disableNightlightAction;
     bool m_enableHdr;
+    bool m_beacnAudienceMixRouting;
 
     bool m_gamemode;
     bool m_firstRun;

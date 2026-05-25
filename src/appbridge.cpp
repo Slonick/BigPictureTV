@@ -5,6 +5,7 @@
 #include "audiomanager.h"
 #include "nightlightswitcher.h"
 #include "steamwindowmanager.h"
+#include "beacnprofile.h"
 #include "displaymanager.h"
 #include "utils.h"
 #include <QApplication>
@@ -247,6 +248,13 @@ void AppBridge::onNewAudioDeviceDetected(QString deviceId, QString deviceName)
 
     // Switch to the new audio device
     AudioManager::setAudioDevice(deviceId);
+
+    // Optionally rewrite BEACN's mixer profile so the broadcast output points at
+    // the new HDMI endpoint, then bounce BEACN to pick it up.
+    AppConfiguration *config = AppConfiguration::instance();
+    if (config->beacnAudienceMixRouting()) {
+        BeacnProfile::applyAudienceMixDevice(deviceName);
+    }
 
     // Stop listening for more devices
     audioDeviceNotifier->stopListening();

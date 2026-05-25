@@ -25,6 +25,7 @@ set(PROJECT_SOURCES
     src/displaymanager.cpp
     src/displaystatemanager.cpp
     src/logmanager.cpp
+    src/beacnprofile.cpp
     extern/HDRtray/common/HDR.cpp
 )
 
@@ -42,6 +43,7 @@ set(PROJECT_HEADERS
     include/displaymanager.h
     include/displaystatemanager.h
     include/logmanager.h
+    include/beacnprofile.h
     extern/HDRtray/common/HDR.h
 )
 
