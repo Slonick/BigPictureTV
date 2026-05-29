@@ -73,6 +73,8 @@ public:
     bool disableNightlightAction() const { return m_disableNightlightAction; }
     bool enableHdr() const { return m_enableHdr; }
     bool beacnAudienceMixRouting() const { return m_beacnAudienceMixRouting; }
+    QString beacnPreviousAudienceDevice() const { return m_beacnPreviousAudienceDevice; }
+    void setBeacnPreviousAudienceDevice(const QString &value);
 
     bool gamemode() const { return m_gamemode; }
     bool firstRun() const { return m_firstRun; }
@@ -169,6 +171,7 @@ private:
     bool m_disableNightlightAction;
     bool m_enableHdr;
     bool m_beacnAudienceMixRouting;
+    QString m_beacnPreviousAudienceDevice;
 
     bool m_gamemode;
     bool m_firstRun;

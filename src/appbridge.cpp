@@ -150,6 +150,16 @@ void AppBridge::onWindowDestroyed()
         checkAndSetHDR(true);
         handleMonitorChanges(true);
         handleAudioChanges(true);
+
+        // Restore BEACN's broadcast output to whatever it was before we patched it.
+        if (config->beacnAudienceMixRouting()) {
+            QString prev = config->beacnPreviousAudienceDevice();
+            if (!prev.isEmpty()) {
+                LogManager::info("Restoring BEACN audience device: " + prev);
+                BeacnProfile::applyAudienceMixDevice(prev);
+                config->setBeacnPreviousAudienceDevice(QString());
+            }
+        }
     }
 }
 
@@ -250,9 +260,16 @@ void AppBridge::onNewAudioDeviceDetected(QString deviceId, QString deviceName)
     AudioManager::setAudioDevice(deviceId);
 
     // Optionally rewrite BEACN's mixer profile so the broadcast output points at
-    // the new HDMI endpoint, then bounce BEACN to pick it up.
+    // the new HDMI endpoint, then bounce BEACN to pick it up. The original
+    // attribute value is stashed in settings so the desktop-mode handler can
+    // restore it (and survives an app crash mid-gamemode).
     AppConfiguration *config = AppConfiguration::instance();
     if (config->beacnAudienceMixRouting()) {
+        QString prev = BeacnProfile::currentAudienceMixDevice();
+        if (!prev.isEmpty() && prev != deviceName) {
+            config->setBeacnPreviousAudienceDevice(prev);
+            LogManager::info("Saved previous BEACN audience device for restore: " + prev);
+        }
         BeacnProfile::applyAudienceMixDevice(deviceName);
     }
 
@@ -359,6 +376,16 @@ void AppBridge::startupReset()
             // Handle audio and other settings
             handleMonitorChanges(true);
             handleAudioChanges(true);
+
+            // Restore BEACN profile if we patched it before the crash.
+            if (config->beacnAudienceMixRouting()) {
+                QString prev = config->beacnPreviousAudienceDevice();
+                if (!prev.isEmpty()) {
+                    LogManager::info("Crash recovery: restoring BEACN audience device: " + prev);
+                    BeacnProfile::applyAudienceMixDevice(prev);
+                    config->setBeacnPreviousAudienceDevice(QString());
+                }
+            }
         }
     }
 }

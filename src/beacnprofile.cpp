@@ -150,6 +150,42 @@ static void startBeacn(const QString &exePath)
 
 } // anonymous namespace
 
+QString BeacnProfile::currentAudienceMixDevice()
+{
+    QString path = profilePath();
+    if (path.isEmpty()) return QString();
+    QFile f(path);
+    if (!f.exists() || !f.open(QIODevice::ReadOnly)) return QString();
+    QString content = QString::fromUtf8(f.readAll());
+    f.close();
+
+    QRegularExpression re(QStringLiteral("broadcastOutputDeviceName=\"([^\"]*)\""));
+    QRegularExpressionMatch m = re.match(content);
+    if (!m.hasMatch()) return QString();
+
+    // Reverse the &#NNN; entities Beacn emits for non-ASCII so callers compare
+    // against Qt's plain device-name string later on.
+    QString raw = m.captured(1);
+    QRegularExpression entityRe(QStringLiteral("&#(\\d+);"));
+    QString decoded;
+    decoded.reserve(raw.size());
+    int pos = 0;
+    QRegularExpressionMatchIterator it = entityRe.globalMatch(raw);
+    while (it.hasNext()) {
+        QRegularExpressionMatch em = it.next();
+        decoded += raw.mid(pos, em.capturedStart() - pos);
+        decoded += QChar(em.captured(1).toUShort());
+        pos = em.capturedEnd();
+    }
+    decoded += raw.mid(pos);
+    // Common XML entities we wrote ourselves.
+    decoded.replace(QLatin1String("&amp;"), QLatin1String("&"));
+    decoded.replace(QLatin1String("&quot;"), QLatin1String("\""));
+    decoded.replace(QLatin1String("&lt;"), QLatin1String("<"));
+    decoded.replace(QLatin1String("&gt;"), QLatin1String(">"));
+    return decoded;
+}
+
 bool BeacnProfile::applyAudienceMixDevice(const QString &friendlyDeviceName)
 {
     if (friendlyDeviceName.isEmpty()) {

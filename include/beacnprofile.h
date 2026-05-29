@@ -16,6 +16,10 @@ namespace BeacnProfile {
 // the Windows MMDevice friendly name (e.g. "LG TV SSCR2 (NVIDIA High Definition Audio)").
 bool applyAudienceMixDevice(const QString &friendlyDeviceName);
 
+// Read the current broadcastOutputDeviceName attribute value without touching
+// the file. Returns empty string if the profile is missing or unparseable.
+QString currentAudienceMixDevice();
+
 }
 
 #endif // BEACNPROFILE_H

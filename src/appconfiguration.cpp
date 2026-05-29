@@ -95,6 +95,7 @@ void AppConfiguration::loadSettings()
     m_disableNightlightAction = m_settings.value("disable_nightlight_action", false).toBool();
     m_enableHdr = m_settings.value("enable_hdr", false).toBool();
     m_beacnAudienceMixRouting = m_settings.value("beacn_audience_mix_routing", false).toBool();
+    m_beacnPreviousAudienceDevice = m_settings.value("beacn_previous_audience_device", "").toString();
 
     m_gamemode = m_settings.value("gamemode", false).toBool();
     m_firstRun = m_settings.value("first_run", true).toBool();
@@ -140,6 +141,7 @@ void AppConfiguration::saveSettings()
     m_settings.setValue("disable_nightlight_action", m_disableNightlightAction);
     m_settings.setValue("enable_hdr", m_enableHdr);
     m_settings.setValue("beacn_audience_mix_routing", m_beacnAudienceMixRouting);
+    m_settings.setValue("beacn_previous_audience_device", m_beacnPreviousAudienceDevice);
 
     m_settings.setValue("gamemode", m_gamemode);
     m_settings.setValue("first_run", m_firstRun);
@@ -343,6 +345,14 @@ void AppConfiguration::setBeacnAudienceMixRouting(bool value)
         m_beacnAudienceMixRouting = value;
         saveSettings();
         emit beacnAudienceMixRoutingChanged();
+    }
+}
+
+void AppConfiguration::setBeacnPreviousAudienceDevice(const QString &value)
+{
+    if (m_beacnPreviousAudienceDevice != value) {
+        m_beacnPreviousAudienceDevice = value;
+        saveSettings();
     }
 }
 
