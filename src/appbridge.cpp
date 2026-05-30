@@ -271,6 +271,14 @@ void AppBridge::onNewAudioDeviceDetected(QString deviceId, QString deviceName)
             LogManager::info("Saved previous BEACN audience device for restore: " + prev);
         }
         BeacnProfile::applyAudienceMixDevice(deviceName);
+
+        // BEACN steals foreground focus while it's coming up. Wait for it to
+        // settle, then re-focus the target window so the user doesn't have to
+        // hit Guide a second time.
+        WindowEventMonitor *wm = windowMonitor;
+        QTimer::singleShot(2500, this, [wm]() {
+            Utils::bringWindowToForeground(wm->trackedWindow());
+        });
     }
 
     // Stop listening for more devices

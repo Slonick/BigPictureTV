@@ -22,6 +22,7 @@ namespace Utils {
     void setHDR(bool enable);
     bool isSunshineStreaming();
     void moveWindowToPrimaryMonitor(HWND hwnd);
+    void bringWindowToForeground(HWND hwnd);
 }
 
 #endif // UTILS_H
