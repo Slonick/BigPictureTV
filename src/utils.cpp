@@ -302,3 +302,39 @@ void Utils::moveWindowToPrimaryMonitor(HWND hwnd)
                      .arg(mi.rcMonitor.left).arg(mi.rcMonitor.top).arg(width).arg(height)
                      .arg(wasMaximized ? "yes" : "no"));
 }
+
+void Utils::bringWindowToForeground(HWND hwnd)
+{
+    if (!hwnd || !IsWindow(hwnd)) {
+        LogManager::debug("bringWindowToForeground: invalid hwnd");
+        return;
+    }
+
+    // Restore if minimized so SetForegroundWindow has something visible to focus.
+    if (IsIconic(hwnd)) {
+        ShowWindow(hwnd, SW_RESTORE);
+    }
+
+    // Windows blocks SetForegroundWindow from a process that isn't the current
+    // foreground owner. The trick used by most window-managers is to briefly
+    // attach this thread's input queue to the foreground thread's, perform the
+    // activation, then detach. That counts as "same input queue" for the focus
+    // restriction.
+    HWND fg = GetForegroundWindow();
+    DWORD fgThread = fg ? GetWindowThreadProcessId(fg, nullptr) : 0;
+    DWORD selfThread = GetCurrentThreadId();
+    bool attached = false;
+    if (fgThread && fgThread != selfThread) {
+        attached = AttachThreadInput(selfThread, fgThread, TRUE) != 0;
+    }
+
+    BringWindowToTop(hwnd);
+    BOOL ok = SetForegroundWindow(hwnd);
+    SetFocus(hwnd);
+
+    if (attached) {
+        AttachThreadInput(selfThread, fgThread, FALSE);
+    }
+
+    LogManager::info(QString("Brought window to foreground (SetForegroundWindow=%1)").arg(ok ? "ok" : "blocked"));
+}

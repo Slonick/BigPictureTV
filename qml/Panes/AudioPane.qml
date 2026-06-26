@@ -35,6 +35,18 @@ Pane {
 
             Card {
                 Layout.fillWidth: true
+                title: "Route BEACN audience mix to HDMI"
+                description: "Close BEACN, rewrite the default mixer profile so the broadcast / audience output points at the new HDMI endpoint, then relaunch BEACN."
+                enabled: !AppConfiguration.disableAudioSwitch && AppConfiguration.useHdmiAudioForGamemode
+                additionalControl: Switch {
+                    id: beacnAudienceMixCheckBox
+                    checked: AppConfiguration.beacnAudienceMixRouting
+                    onToggled: AppConfiguration.beacnAudienceMixRouting = checked
+                }
+            }
+
+            Card {
+                Layout.fillWidth: true
                 title: "Gamemode audio"
                 enabled: !AppConfiguration.disableAudioSwitch && !AppConfiguration.useHdmiAudioForGamemode
                 additionalControl: CustomComboBox {

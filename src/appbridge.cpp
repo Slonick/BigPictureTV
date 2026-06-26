@@ -5,6 +5,7 @@
 #include "audiomanager.h"
 #include "nightlightswitcher.h"
 #include "steamwindowmanager.h"
+#include "beacnprofile.h"
 #include "displaymanager.h"
 #include "utils.h"
 #include <QApplication>
@@ -149,6 +150,16 @@ void AppBridge::onWindowDestroyed()
         checkAndSetHDR(true);
         handleMonitorChanges(true);
         handleAudioChanges(true);
+
+        // Restore BEACN's broadcast output to whatever it was before we patched it.
+        if (config->beacnAudienceMixRouting()) {
+            QString prev = config->beacnPreviousAudienceDevice();
+            if (!prev.isEmpty()) {
+                LogManager::info("Restoring BEACN audience device: " + prev);
+                BeacnProfile::applyAudienceMixDevice(prev);
+                config->setBeacnPreviousAudienceDevice(QString());
+            }
+        }
     }
 }
 
@@ -248,9 +259,70 @@ void AppBridge::onNewAudioDeviceDetected(QString deviceId, QString deviceName)
     // Switch to the new audio device
     AudioManager::setAudioDevice(deviceId);
 
+    // Optionally rewrite BEACN's mixer profile so the broadcast output points at
+    // the new HDMI endpoint, then bounce BEACN to pick it up. The original
+    // attribute value is stashed in settings so the desktop-mode handler can
+    // restore it (and survives an app crash mid-gamemode).
+    AppConfiguration *config = AppConfiguration::instance();
+    if (config->beacnAudienceMixRouting()) {
+        QString prev = BeacnProfile::currentAudienceMixDevice();
+        if (!prev.isEmpty() && prev != deviceName) {
+            config->setBeacnPreviousAudienceDevice(prev);
+            LogManager::info("Saved previous BEACN audience device for restore: " + prev);
+        }
+        BeacnProfile::applyAudienceMixDevice(deviceName);
+
+        // BEACN steals foreground focus while it's coming back up, and its
+        // startup time varies, so a single fixed-delay refocus races against it
+        // (refocus too early and BEACN grabs focus again afterwards). Instead,
+        // retry re-grabbing focus over a window of several seconds and stop once
+        // the target window has stayed foreground across consecutive checks.
+        scheduleTargetRefocus();
+    }
+
     // Stop listening for more devices
     audioDeviceNotifier->stopListening();
     LogManager::info("Stopped listening for audio devices after successful switch");
+}
+
+void AppBridge::scheduleTargetRefocus()
+{
+    // Give BEACN a moment to come up before the first attempt, then start the
+    // retry loop. ~1s + 12 attempts * 800ms covers roughly 10s of BEACN startup
+    // jitter, which is comfortably more than it takes to settle in practice.
+    QTimer::singleShot(1000, this, [this]() {
+        attemptTargetRefocus(12, 0);
+    });
+}
+
+void AppBridge::attemptTargetRefocus(int attemptsLeft, int stableStreak)
+{
+    HWND target = windowMonitor->trackedWindow();
+    if (!target || !IsWindow(target)) {
+        LogManager::debug("Refocus: no valid tracked window, giving up");
+        return;
+    }
+
+    if (GetForegroundWindow() == target) {
+        // Already focused. Require it to hold across consecutive checks before
+        // we trust it, in case BEACN is still about to grab focus once more.
+        if (++stableStreak >= 2) {
+            LogManager::info("Refocus: target window stable in foreground, done");
+            return;
+        }
+    } else {
+        Utils::bringWindowToForeground(target);
+        stableStreak = 0;
+    }
+
+    if (attemptsLeft <= 1) {
+        LogManager::info("Refocus: attempts exhausted");
+        return;
+    }
+
+    QTimer::singleShot(800, this, [this, attemptsLeft, stableStreak]() {
+        attemptTargetRefocus(attemptsLeft - 1, stableStreak);
+    });
 }
 
 void AppBridge::handleActions(bool isDesktopMode)
@@ -351,6 +423,16 @@ void AppBridge::startupReset()
             // Handle audio and other settings
             handleMonitorChanges(true);
             handleAudioChanges(true);
+
+            // Restore BEACN profile if we patched it before the crash.
+            if (config->beacnAudienceMixRouting()) {
+                QString prev = config->beacnPreviousAudienceDevice();
+                if (!prev.isEmpty()) {
+                    LogManager::info("Crash recovery: restoring BEACN audience device: " + prev);
+                    BeacnProfile::applyAudienceMixDevice(prev);
+                    config->setBeacnPreviousAudienceDevice(QString());
+                }
+            }
         }
     }
 }

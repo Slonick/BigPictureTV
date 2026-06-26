@@ -3,6 +3,7 @@
 #include <QProcess>
 #include "appconfiguration.h"
 #include "appbridge.h"
+#include "mqttclient.h"
 #include "displaymanager.h"
 #include "utils.h"
 #include "logmanager.h"
@@ -45,6 +46,7 @@ int main(int argc, char *argv[])
     AppConfiguration::create(&engine, nullptr);
     DisplayManager::create(&engine, nullptr);
     AppBridge::create(&engine, nullptr);
+    MqttClient::create(&engine, nullptr);
 
     engine.loadFromModule("Odizinne.BigPictureTV", "Main");
 

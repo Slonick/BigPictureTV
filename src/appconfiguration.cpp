@@ -94,6 +94,17 @@ void AppConfiguration::loadSettings()
     m_pauseMediaAction = m_settings.value("pause_media_action", false).toBool();
     m_disableNightlightAction = m_settings.value("disable_nightlight_action", false).toBool();
     m_enableHdr = m_settings.value("enable_hdr", false).toBool();
+    m_beacnAudienceMixRouting = m_settings.value("beacn_audience_mix_routing", false).toBool();
+    m_beacnPreviousAudienceDevice = m_settings.value("beacn_previous_audience_device", "").toString();
+
+    m_mqttEnabled = m_settings.value("mqtt_enabled", false).toBool();
+    m_mqttHost = m_settings.value("mqtt_host", "").toString();
+    m_mqttPort = m_settings.value("mqtt_port", 1883).toInt();
+    m_mqttUsername = m_settings.value("mqtt_username", "").toString();
+    m_mqttPassword = m_settings.value("mqtt_password", "").toString();
+    m_mqttEntityName = m_settings.value("mqtt_entity_name", "Big Picture Mode").toString();
+    m_mqttBaseTopic = m_settings.value("mqtt_base_topic", "bigpicturetv").toString();
+    m_mqttDiscoveryPrefix = m_settings.value("mqtt_discovery_prefix", "homeassistant").toString();
 
     m_gamemode = m_settings.value("gamemode", false).toBool();
     m_firstRun = m_settings.value("first_run", true).toBool();
@@ -138,6 +149,17 @@ void AppConfiguration::saveSettings()
     m_settings.setValue("pause_media_action", m_pauseMediaAction);
     m_settings.setValue("disable_nightlight_action", m_disableNightlightAction);
     m_settings.setValue("enable_hdr", m_enableHdr);
+    m_settings.setValue("beacn_audience_mix_routing", m_beacnAudienceMixRouting);
+    m_settings.setValue("beacn_previous_audience_device", m_beacnPreviousAudienceDevice);
+
+    m_settings.setValue("mqtt_enabled", m_mqttEnabled);
+    m_settings.setValue("mqtt_host", m_mqttHost);
+    m_settings.setValue("mqtt_port", m_mqttPort);
+    m_settings.setValue("mqtt_username", m_mqttUsername);
+    m_settings.setValue("mqtt_password", m_mqttPassword);
+    m_settings.setValue("mqtt_entity_name", m_mqttEntityName);
+    m_settings.setValue("mqtt_base_topic", m_mqttBaseTopic);
+    m_settings.setValue("mqtt_discovery_prefix", m_mqttDiscoveryPrefix);
 
     m_settings.setValue("gamemode", m_gamemode);
     m_settings.setValue("first_run", m_firstRun);
@@ -335,6 +357,95 @@ void AppConfiguration::setEnableHdr(bool value)
     }
 }
 
+void AppConfiguration::setBeacnAudienceMixRouting(bool value)
+{
+    if (m_beacnAudienceMixRouting != value) {
+        m_beacnAudienceMixRouting = value;
+        saveSettings();
+        emit beacnAudienceMixRoutingChanged();
+    }
+}
+
+void AppConfiguration::setBeacnPreviousAudienceDevice(const QString &value)
+{
+    if (m_beacnPreviousAudienceDevice != value) {
+        m_beacnPreviousAudienceDevice = value;
+        saveSettings();
+    }
+}
+
+void AppConfiguration::setMqttEnabled(bool value)
+{
+    if (m_mqttEnabled != value) {
+        m_mqttEnabled = value;
+        saveSettings();
+        emit mqttEnabledChanged();
+    }
+}
+
+void AppConfiguration::setMqttHost(const QString &value)
+{
+    if (m_mqttHost != value) {
+        m_mqttHost = value;
+        saveSettings();
+        emit mqttHostChanged();
+    }
+}
+
+void AppConfiguration::setMqttPort(int value)
+{
+    if (m_mqttPort != value) {
+        m_mqttPort = value;
+        saveSettings();
+        emit mqttPortChanged();
+    }
+}
+
+void AppConfiguration::setMqttUsername(const QString &value)
+{
+    if (m_mqttUsername != value) {
+        m_mqttUsername = value;
+        saveSettings();
+        emit mqttUsernameChanged();
+    }
+}
+
+void AppConfiguration::setMqttPassword(const QString &value)
+{
+    if (m_mqttPassword != value) {
+        m_mqttPassword = value;
+        saveSettings();
+        emit mqttPasswordChanged();
+    }
+}
+
+void AppConfiguration::setMqttEntityName(const QString &value)
+{
+    if (m_mqttEntityName != value) {
+        m_mqttEntityName = value;
+        saveSettings();
+        emit mqttEntityNameChanged();
+    }
+}
+
+void AppConfiguration::setMqttBaseTopic(const QString &value)
+{
+    if (m_mqttBaseTopic != value) {
+        m_mqttBaseTopic = value;
+        saveSettings();
+        emit mqttBaseTopicChanged();
+    }
+}
+
+void AppConfiguration::setMqttDiscoveryPrefix(const QString &value)
+{
+    if (m_mqttDiscoveryPrefix != value) {
+        m_mqttDiscoveryPrefix = value;
+        saveSettings();
+        emit mqttDiscoveryPrefixChanged();
+    }
+}
+
 void AppConfiguration::setGamemode(bool value)
 {
     if (m_gamemode != value) {
@@ -377,4 +488,14 @@ void AppConfiguration::resetToDefaults()
     setPauseMediaAction(false);
     setDisableNightlightAction(false);
     setEnableHdr(false);
+    setBeacnAudienceMixRouting(false);
+
+    setMqttEnabled(false);
+    setMqttHost("");
+    setMqttPort(1883);
+    setMqttUsername("");
+    setMqttPassword("");
+    setMqttEntityName("Big Picture Mode");
+    setMqttBaseTopic("bigpicturetv");
+    setMqttDiscoveryPrefix("homeassistant");
 }

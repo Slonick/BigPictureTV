@@ -7,7 +7,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Core Widgets Gui Qml Quick)
+find_package(Qt6 REQUIRED COMPONENTS Core Widgets Gui Qml Quick Network)
 
 qt_standard_project_setup(REQUIRES 6.8)
 
@@ -25,6 +25,8 @@ set(PROJECT_SOURCES
     src/displaymanager.cpp
     src/displaystatemanager.cpp
     src/logmanager.cpp
+    src/beacnprofile.cpp
+    src/mqttclient.cpp
     extern/HDRtray/common/HDR.cpp
 )
 
@@ -42,6 +44,8 @@ set(PROJECT_HEADERS
     include/displaymanager.h
     include/displaystatemanager.h
     include/logmanager.h
+    include/beacnprofile.h
+    include/mqttclient.h
     extern/HDRtray/common/HDR.h
 )
 
@@ -55,6 +59,7 @@ set(QML_FILES
     qml/Panes/GeneralPane.qml
     qml/Panes/AudioPane.qml
     qml/Panes/VideoPane.qml
+    qml/Panes/MqttPane.qml
 )
 
 set(QML_SINGLETONS
@@ -88,6 +93,7 @@ target_link_libraries(BigPictureTV PRIVATE
     Qt6::Gui
     Qt6::Qml
     Qt6::Quick
+    Qt6::Network
 )
 
 if(WIN32)
