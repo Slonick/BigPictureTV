@@ -40,6 +40,16 @@ class AppConfiguration : public QObject
     Q_PROPERTY(bool enableHdr READ enableHdr WRITE setEnableHdr NOTIFY enableHdrChanged)
     Q_PROPERTY(bool beacnAudienceMixRouting READ beacnAudienceMixRouting WRITE setBeacnAudienceMixRouting NOTIFY beacnAudienceMixRoutingChanged)
 
+    // Home Assistant / MQTT settings
+    Q_PROPERTY(bool mqttEnabled READ mqttEnabled WRITE setMqttEnabled NOTIFY mqttEnabledChanged)
+    Q_PROPERTY(QString mqttHost READ mqttHost WRITE setMqttHost NOTIFY mqttHostChanged)
+    Q_PROPERTY(int mqttPort READ mqttPort WRITE setMqttPort NOTIFY mqttPortChanged)
+    Q_PROPERTY(QString mqttUsername READ mqttUsername WRITE setMqttUsername NOTIFY mqttUsernameChanged)
+    Q_PROPERTY(QString mqttPassword READ mqttPassword WRITE setMqttPassword NOTIFY mqttPasswordChanged)
+    Q_PROPERTY(QString mqttEntityName READ mqttEntityName WRITE setMqttEntityName NOTIFY mqttEntityNameChanged)
+    Q_PROPERTY(QString mqttBaseTopic READ mqttBaseTopic WRITE setMqttBaseTopic NOTIFY mqttBaseTopicChanged)
+    Q_PROPERTY(QString mqttDiscoveryPrefix READ mqttDiscoveryPrefix WRITE setMqttDiscoveryPrefix NOTIFY mqttDiscoveryPrefixChanged)
+
     // Internal state
     Q_PROPERTY(bool gamemode READ gamemode WRITE setGamemode NOTIFY gamemodeChanged)
 
@@ -76,6 +86,15 @@ public:
     QString beacnPreviousAudienceDevice() const { return m_beacnPreviousAudienceDevice; }
     void setBeacnPreviousAudienceDevice(const QString &value);
 
+    bool mqttEnabled() const { return m_mqttEnabled; }
+    QString mqttHost() const { return m_mqttHost; }
+    int mqttPort() const { return m_mqttPort; }
+    QString mqttUsername() const { return m_mqttUsername; }
+    QString mqttPassword() const { return m_mqttPassword; }
+    QString mqttEntityName() const { return m_mqttEntityName; }
+    QString mqttBaseTopic() const { return m_mqttBaseTopic; }
+    QString mqttDiscoveryPrefix() const { return m_mqttDiscoveryPrefix; }
+
     bool gamemode() const { return m_gamemode; }
     bool firstRun() const { return m_firstRun; }
 
@@ -103,6 +122,15 @@ public:
     void setDisableNightlightAction(bool value);
     void setEnableHdr(bool value);
     void setBeacnAudienceMixRouting(bool value);
+
+    void setMqttEnabled(bool value);
+    void setMqttHost(const QString &value);
+    void setMqttPort(int value);
+    void setMqttUsername(const QString &value);
+    void setMqttPassword(const QString &value);
+    void setMqttEntityName(const QString &value);
+    void setMqttBaseTopic(const QString &value);
+    void setMqttDiscoveryPrefix(const QString &value);
 
     void setGamemode(bool value);
     void setFirstRun(bool value);
@@ -133,6 +161,15 @@ signals:
     void disableNightlightActionChanged();
     void enableHdrChanged();
     void beacnAudienceMixRoutingChanged();
+
+    void mqttEnabledChanged();
+    void mqttHostChanged();
+    void mqttPortChanged();
+    void mqttUsernameChanged();
+    void mqttPasswordChanged();
+    void mqttEntityNameChanged();
+    void mqttBaseTopicChanged();
+    void mqttDiscoveryPrefixChanged();
 
     void gamemodeChanged();
     void firstRunChanged();
@@ -172,6 +209,15 @@ private:
     bool m_enableHdr;
     bool m_beacnAudienceMixRouting;
     QString m_beacnPreviousAudienceDevice;
+
+    bool m_mqttEnabled;
+    QString m_mqttHost;
+    int m_mqttPort;
+    QString m_mqttUsername;
+    QString m_mqttPassword;
+    QString m_mqttEntityName;
+    QString m_mqttBaseTopic;
+    QString m_mqttDiscoveryPrefix;
 
     bool m_gamemode;
     bool m_firstRun;

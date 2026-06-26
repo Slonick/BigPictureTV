@@ -26,6 +26,7 @@ ApplicationWindow {
         ListElement { name: "Audio"; icon: "qrc:/icons/audio.svg" }
         ListElement { name: "Video"; icon: "qrc:/icons/video.svg️" }
         ListElement { name: "Actions"; icon: "qrc:/icons/actions.svg" }
+        ListElement { name: "MQTT"; icon: "qrc:/icons/general.svg️" }
     }
 
     RowLayout {
@@ -82,6 +83,7 @@ ApplicationWindow {
                     case 1: stackView.push(audioPane); break;
                     case 2: stackView.push(videoPane); break;
                     case 3: stackView.push(actionsPane); break;
+                    case 4: stackView.push(mqttPane); break;
                     }
                 }
             }
@@ -106,6 +108,11 @@ ApplicationWindow {
     Component {
         id: actionsPane
         ActionsPane {}
+    }
+
+    Component {
+        id: mqttPane
+        MqttPane {}
     }
 
     Tray {
