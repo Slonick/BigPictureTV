@@ -3,13 +3,20 @@
 
 #include <QObject>
 #include <QQmlEngine>
+#include <QByteArray>
 
-class QMqttClient;
+class QTcpSocket;
+class QTimer;
 
 // Publishes the current Big Picture / desktop state to an MQTT broker so Home
 // Assistant can react (e.g. turn the TV on the right input when gamemode
 // starts). Uses MQTT Discovery so BigPictureTV shows up automatically as a
 // binary_sensor without any manual YAML on the HA side.
+//
+// This is a small, self-contained MQTT 3.1.1 publisher built directly on
+// QTcpSocket (CONNECT / PUBLISH / PINGREQ / DISCONNECT, QoS 0). We don't use the
+// Qt Mqtt module because it ships only with the commercial Qt installer and
+// isn't available through aqtinstall, which our CI uses.
 class MqttClient : public QObject
 {
     Q_OBJECT
@@ -24,10 +31,9 @@ public:
     static MqttClient* instance();
 
     QString statusText() const { return m_statusText; }
-    bool connected() const;
+    bool connected() const { return m_mqttConnected; }
 
     // Connect now with the current settings and publish discovery + state.
-    // Also re-runs whenever the broker settings are saved from the UI.
     Q_INVOKABLE void testConnection();
 
     // Publish an ON/OFF state without actually entering Big Picture, so the
@@ -40,9 +46,11 @@ signals:
 private slots:
     void onGamemodeChanged();
     void onMqttEnabledChanged();
-    void onConnected();
-    void onDisconnected();
-    void onErrorChanged();
+    void onSocketConnected();
+    void onSocketDisconnected();
+    void onSocketError();
+    void onReadyRead();
+    void sendPing();
 
 private:
     explicit MqttClient(QObject *parent = nullptr);
@@ -50,20 +58,27 @@ private:
 
     static MqttClient* s_instance;
 
-    void applyConfig();
     void reconnect();
     void doConnect();
+    void sendConnect();
+    void onMqttConnected();      // CONNACK accepted
     void publishDiscovery();
     void publishState(bool gamemode);
+    void publish(const QString &topic, const QByteArray &payload, bool retain);
+    void parseBuffer();
     void setStatus(const QString &text);
 
     QString nodeId() const;        // sanitized id used for topics / unique_id
     QString stateTopic() const;
     QString discoveryTopic() const;
 
-    QMqttClient *m_client;
+    QTcpSocket *m_socket;
+    QTimer *m_pingTimer;
+    QTimer *m_retryTimer;          // auto-reconnect after an unexpected drop
+    QByteArray m_readBuffer;
     QString m_statusText;
-    bool m_reconnectPending;
+    bool m_mqttConnected;          // CONNACK received, ready to publish
+    bool m_intentionalDisconnect;  // suppress auto-reconnect for deliberate teardowns
 };
 
 #endif // MQTTCLIENT_H

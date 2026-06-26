@@ -7,7 +7,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Core Widgets Gui Qml Quick Mqtt)
+find_package(Qt6 REQUIRED COMPONENTS Core Widgets Gui Qml Quick Network)
 
 qt_standard_project_setup(REQUIRES 6.8)
 
@@ -93,7 +93,7 @@ target_link_libraries(BigPictureTV PRIVATE
     Qt6::Gui
     Qt6::Qml
     Qt6::Quick
-    Qt6::Mqtt
+    Qt6::Network
 )
 
 if(WIN32)
