@@ -58,6 +58,8 @@ private:
     void handleAudioChanges(bool isDesktopMode);
     void handleMonitorChanges(bool isDesktopMode);
     void checkAndSetHDR(bool isDesktopMode);
+    void scheduleTargetRefocus();
+    void attemptTargetRefocus(int attemptsLeft, int stableStreak);
     void updateAudioDevices();
     void checkHDRCapability();
     void checkDiscordInstalled();

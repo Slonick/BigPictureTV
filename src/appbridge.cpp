@@ -272,18 +272,57 @@ void AppBridge::onNewAudioDeviceDetected(QString deviceId, QString deviceName)
         }
         BeacnProfile::applyAudienceMixDevice(deviceName);
 
-        // BEACN steals foreground focus while it's coming up. Wait for it to
-        // settle, then re-focus the target window so the user doesn't have to
-        // hit Guide a second time.
-        WindowEventMonitor *wm = windowMonitor;
-        QTimer::singleShot(2500, this, [wm]() {
-            Utils::bringWindowToForeground(wm->trackedWindow());
-        });
+        // BEACN steals foreground focus while it's coming back up, and its
+        // startup time varies, so a single fixed-delay refocus races against it
+        // (refocus too early and BEACN grabs focus again afterwards). Instead,
+        // retry re-grabbing focus over a window of several seconds and stop once
+        // the target window has stayed foreground across consecutive checks.
+        scheduleTargetRefocus();
     }
 
     // Stop listening for more devices
     audioDeviceNotifier->stopListening();
     LogManager::info("Stopped listening for audio devices after successful switch");
+}
+
+void AppBridge::scheduleTargetRefocus()
+{
+    // Give BEACN a moment to come up before the first attempt, then start the
+    // retry loop. ~1s + 12 attempts * 800ms covers roughly 10s of BEACN startup
+    // jitter, which is comfortably more than it takes to settle in practice.
+    QTimer::singleShot(1000, this, [this]() {
+        attemptTargetRefocus(12, 0);
+    });
+}
+
+void AppBridge::attemptTargetRefocus(int attemptsLeft, int stableStreak)
+{
+    HWND target = windowMonitor->trackedWindow();
+    if (!target || !IsWindow(target)) {
+        LogManager::debug("Refocus: no valid tracked window, giving up");
+        return;
+    }
+
+    if (GetForegroundWindow() == target) {
+        // Already focused. Require it to hold across consecutive checks before
+        // we trust it, in case BEACN is still about to grab focus once more.
+        if (++stableStreak >= 2) {
+            LogManager::info("Refocus: target window stable in foreground, done");
+            return;
+        }
+    } else {
+        Utils::bringWindowToForeground(target);
+        stableStreak = 0;
+    }
+
+    if (attemptsLeft <= 1) {
+        LogManager::info("Refocus: attempts exhausted");
+        return;
+    }
+
+    QTimer::singleShot(800, this, [this, attemptsLeft, stableStreak]() {
+        attemptTargetRefocus(attemptsLeft - 1, stableStreak);
+    });
 }
 
 void AppBridge::handleActions(bool isDesktopMode)
